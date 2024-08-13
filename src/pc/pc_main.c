@@ -11,6 +11,8 @@
 #include "game/memory.h"
 #include "audio/external.h"
 
+#include "gfx/gfx_rt64.h"
+
 #include "network/network.h"
 #include "lua/smlua.h"
 
