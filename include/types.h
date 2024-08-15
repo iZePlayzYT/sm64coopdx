@@ -6,8 +6,10 @@
 
 #include <ultra64.h>
 #include "macros.h"
-#include "data/dynos.c.h"
 
+#include "pc/gfx/gfx_rendering_api.h"
+
+#include "data/dynos.c.h"
 
 // Certain functions are marked as having return values, but do not
 // actually return a value. This causes undefined behavior, which we'd rather
@@ -108,6 +110,9 @@ struct GraphNode
     /*0x0C*/ struct GraphNode *parent;
     /*0x10*/ struct GraphNode *children;
     /*0x14*/ const void *georef;
+#ifdef GFX_SEPARATE_PROJECTIONS
+    u32 uid;
+#endif
 };
 
 // struct AnimInfo?

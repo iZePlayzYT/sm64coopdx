@@ -3,6 +3,7 @@ extern "C" {
 #include "object_fields.h"
 #include "game/level_update.h"
 #include "game/object_list_processor.h"
+#include "pc/gfx/gfx_pc.h"
 }
 
 //
@@ -134,6 +135,9 @@ void DynOS_Gfx_Update() {
                                     _ActorGfx->mGfxData   = _GfxData;
                                     _ActorGfx->mGraphNode = (GraphNode *) DynOS_Geo_GetGraphNode((*(_GfxData->mGeoLayouts.end() - 1))->mData, true);
                                     _ActorGfx->mGraphNode->georef = DynOS_Geo_GetActorLayout(_ActorIndex);
+#ifdef GFX_ENABLE_GRAPH_NODE_MODS
+                                    gfx_register_layout_graph_node((void *)(_ActorGfx->mGraphNode->georef), _ActorGfx->mGraphNode);
+#endif
                                     break;
                                 }
                             }
@@ -144,6 +148,9 @@ void DynOS_Gfx_Update() {
                                 _ActorGfx->mPackIndex = -1;
                                 _ActorGfx->mGfxData   = NULL;
                                 _ActorGfx->mGraphNode = (GraphNode *) DynOS_Geo_GetGraphNode(DynOS_Geo_GetActorLayout(_ActorIndex), true);
+#ifdef GFX_ENABLE_GRAPH_NODE_MODS
+                                gfx_register_layout_graph_node((void *)(_ActorGfx->mGraphNode->georef), _ActorGfx->mGraphNode);
+#endif
                             }
                         }
 

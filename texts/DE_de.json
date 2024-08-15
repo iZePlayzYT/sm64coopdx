@@ -3440,6 +3440,7 @@
         "TEXT_OPT_LANGUAGE": "Sprache",
 		"TEXT_OPT_PRECACHE": "Texturen Vorpuffern",
         "TEXT_OPT_SWITCH_HUD": "Switch HUD",
+
         "TEXT_OPT_BILLBOARDS": "Billboards(Plakatw{00228}nde) deaktivieren",
 
         "TEXT_BIND_D_UP": "D-pad Up",

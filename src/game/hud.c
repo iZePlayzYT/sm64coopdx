@@ -525,27 +525,13 @@ void render_hud_keys(void) {
     }
 }
 
-/*
-Hud for wario coins WAAAAAAAAAAAAAH
-*/
 void render_hud_wario_coins(void) {
-    if(gHudDisplay.keys > 0 && gHudDisplay.keys < 10){
-        if(gHudDisplay.wario_coins > 0 && gHudDisplay.wario_coins < 6){
-            gSPDisplayList(gDisplayListHead++, dl_hud_img_begin);
-            render_hud_tex_lut(GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(22), 55, "textures/segment2/wario_coin.rgba16");
-            gSPDisplayList(gDisplayListHead++, dl_hud_img_end);
-            print_text(GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(38), HUD_TOP_Y - 40, "*"); // 'X' glyph
-            print_text_fmt_int(GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(54), HUD_TOP_Y - 40, "%d", gHudDisplay.wario_coins);
-        }
-    }
-    else{
-        if(gHudDisplay.wario_coins > 0 && gHudDisplay.wario_coins < 6){
-            gSPDisplayList(gDisplayListHead++, dl_hud_img_begin);
-            render_hud_tex_lut(GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(22), 35, "textures/segment2/wario_coin.rgba16");
-            gSPDisplayList(gDisplayListHead++, dl_hud_img_end);
-            print_text(GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(38), HUD_TOP_Y - 20, "*"); // 'X' glyph
-            print_text_fmt_int(GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(54), HUD_TOP_Y - 20, "%d", gHudDisplay.wario_coins);
-        }
+    if(gHudDisplay.wario_coins > 0 && gHudDisplay.wario_coins < 6){
+        gSPDisplayList(gDisplayListHead++, dl_hud_img_begin);
+        render_hud_tex_lut(GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(22), 55, "textures/segment2/wario_coin.rgba16");
+        gSPDisplayList(gDisplayListHead++, dl_hud_img_end);
+        print_text(GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(38), HUD_TOP_Y - 40, "*"); // 'X' glyph
+        print_text_fmt_int(GFX_DIMENSIONS_RECT_FROM_LEFT_EDGE(54), HUD_TOP_Y - 40, "%d", gHudDisplay.wario_coins);
     }
 }
 

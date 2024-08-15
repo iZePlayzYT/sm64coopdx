@@ -25304,6 +25304,7 @@ Gfx wario_000_displaylist_005_mesh_tri_0[] = {
 
 Gfx mat_wario_wario_buttons[] = {
 	gsDPPipeSync(),
+	gsDPSetAlphaCompare(G_AC_COVERAGE),
 	gsDPSetCombineLERP(TEXEL0, 0, SHADE, 0, 0, 0, 0, ENVIRONMENT, TEXEL0, 0, SHADE, 0, 0, 0, 0, ENVIRONMENT),
 	gsSPTexture(65535, 65535, 0, 0, 1),
 	gsDPTileSync(),

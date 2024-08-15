@@ -3226,6 +3226,7 @@ Gfx mario_cap_000_displaylist_mesh_tri_2[] = {
 
 Gfx mat_mario_cap_mario_logo[] = {
 	gsDPPipeSync(),
+	gsDPSetAlphaCompare(G_AC_COVERAGE),
 	gsDPSetCombineLERP(TEXEL0, 0, SHADE, 0, 0, 0, 0, ENVIRONMENT, TEXEL0, 0, SHADE, 0, 0, 0, 0, ENVIRONMENT),
 	gsSPTexture(65535, 65535, 0, 0, 1),
 	gsDPTileSync(),

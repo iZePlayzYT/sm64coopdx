@@ -3294,6 +3294,7 @@ Gfx mat_luigi_cap_luigi_wings[] = {
 
 Gfx mat_luigi_cap_luigi_hat[] = {
 	gsDPPipeSync(),
+	gsDPSetAlphaCompare(G_AC_COVERAGE),
 	gsDPSetCombineLERP(TEXEL0, 0, SHADE, 0, 0, 0, 0, ENVIRONMENT, TEXEL0, 0, SHADE, 0, 0, 0, 0, ENVIRONMENT),
 	gsSPTexture(65535, 65535, 0, 0, 1),
 	gsDPTileSync(),

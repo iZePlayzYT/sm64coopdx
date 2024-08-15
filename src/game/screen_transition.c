@@ -226,54 +226,6 @@ s32 render_textured_transition(s8 fadeTimer, s8 transTime, struct WarpTransition
     return set_and_reset_transition_fade_timer(fadeTimer, transTime);
 }
 
-s32 render_textured_transition_2(s8 fadeTimer, s8 transTime, struct WarpTransitionData *transData, u8 *texture, s8 transTexType) {
-    f32 texTransTime = calc_tex_transition_time(fadeTimer, transTime, transData);
-    u16 texTransPos = convert_tex_transition_angle_to_pos(transData);
-    s16 centerTransX = center_tex_transition_x(transData, texTransTime, texTransPos);
-    s16 centerTransY = center_tex_transition_y(transData, texTransTime, texTransPos);
-    s16 texTransRadius = calc_tex_transition_radius(fadeTimer, 1.0f, transTime, transData);
-    s16 texTransRadiusInterpolated = calc_tex_transition_radius(fadeTimer, 0.5f, transTime, transData);
-    Vtx *verts = alloc_display_list(8 * sizeof(*verts));
-    Vtx *vertsInterpolated = alloc_display_list(8 * sizeof(*vertsInterpolated));
-
-    if (verts != NULL) {
-        load_tex_transition_vertex(verts, fadeTimer, transData, centerTransX, centerTransY, texTransRadius, transTexType);
-        load_tex_transition_vertex(vertsInterpolated, fadeTimer, transData, centerTransX, centerTransY, texTransRadiusInterpolated, transTexType);
-        sScreenTransitionVertices = verts;
-        gSPDisplayList(gDisplayListHead++, dl_proj_mtx_fullscreen)
-        gDPSetCombineMode(gDisplayListHead++, G_CC_SHADE, G_CC_SHADE);
-        gDPSetRenderMode(gDisplayListHead++, G_RM_AA_OPA_SURF, G_RM_AA_OPA_SURF2);
-        sScreenTransitionVerticesPos[0] = gDisplayListHead;
-        gSPVertex(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(vertsInterpolated), 8, 0);
-        gSPDisplayList(gDisplayListHead++, dl_transition_draw_filled_region);
-        gDPPipeSync(gDisplayListHead++);
-        gDPSetCombineMode(gDisplayListHead++, G_CC_MODULATEIDECALA, G_CC_MODULATEIDECALA);
-        gDPSetRenderMode(gDisplayListHead++, G_RM_AA_XLU_SURF, G_RM_AA_XLU_SURF2);
-        gDPSetTextureFilter(gDisplayListHead++, G_TF_BILERP);
-        switch (transTexType) {
-        case TRANS_TYPE_MIRROR:
-            gDPLoadTextureBlock(gDisplayListHead++, texture, G_IM_FMT_IA, G_IM_SIZ_8b, 32, 64, 0,
-                G_TX_WRAP | G_TX_MIRROR, G_TX_WRAP | G_TX_MIRROR, 5, 6, G_TX_NOLOD, G_TX_NOLOD);
-            break;
-        case TRANS_TYPE_CLAMP:
-            gDPLoadTextureBlock(gDisplayListHead++, texture, G_IM_FMT_IA, G_IM_SIZ_8b, 64, 64, 0,
-                G_TX_CLAMP, G_TX_CLAMP, 6, 6, G_TX_NOLOD, G_TX_NOLOD);
-            break;
-        }
-        gSPTexture(gDisplayListHead++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
-        sScreenTransitionVerticesPos[1] = gDisplayListHead;
-        gSPVertex(gDisplayListHead++, VIRTUAL_TO_PHYSICAL(vertsInterpolated), 4, 0);
-        gSPDisplayList(gDisplayListHead++, dl_draw_quad_verts_0123);
-        gSPTexture(gDisplayListHead++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_OFF);
-        gSPDisplayList(gDisplayListHead++, dl_screen_transition_end);
-        sTransitionTextureFadeCount[fadeTimer] += transData->texTimer;
-
-    } else {
-    }
-    return set_and_reset_transition_fade_timer(fadeTimer, transTime);
-}
-
-
 int render_screen_transition(s8 fadeTimer, s8 transType, u8 transTime, struct WarpTransitionData *transData) {
     switch (transType) {
         case WARP_TRANSITION_FADE_FROM_COLOR:
@@ -294,33 +246,11 @@ int render_screen_transition(s8 fadeTimer, s8 transType, u8 transTime, struct Wa
         case WARP_TRANSITION_FADE_INTO_CIRCLE:
             return render_textured_transition(fadeTimer, transTime, transData, TEX_TRANS_CIRCLE, TRANS_TYPE_MIRROR);
             break;
-         case WARP_TRANSITION_FADE_FROM_MARIO:
-            if(isLuigi()){
-                return render_textured_transition_2(fadeTimer, transTime, transData, "textures/segment2/segment2.13458.ia8", TRANS_TYPE_CLAMP);
-            }
-
-            else if(isWario()){
-                return render_textured_transition_2(fadeTimer, transTime, transData, "textures/segment2/segment2.12458.ia8", TRANS_TYPE_CLAMP);
-            }
-
-            else{
-                return render_textured_transition(fadeTimer, transTime, transData, TEX_TRANS_MARIO, TRANS_TYPE_CLAMP);
-            }
-            
+        case WARP_TRANSITION_FADE_FROM_MARIO:
+            return render_textured_transition(fadeTimer, transTime, transData, TEX_TRANS_MARIO, TRANS_TYPE_CLAMP);
             break;
         case WARP_TRANSITION_FADE_INTO_MARIO:
-            if(isLuigi()){
-                return render_textured_transition_2(fadeTimer, transTime, transData, "textures/segment2/segment2.13458.ia8", TRANS_TYPE_CLAMP);
-            }
-
-            else if(isWario()){
-                return render_textured_transition_2(fadeTimer, transTime, transData, "textures/segment2/segment2.12458.ia8", TRANS_TYPE_CLAMP);
-            }
-
-            else{
-                return render_textured_transition(fadeTimer, transTime, transData, TEX_TRANS_MARIO, TRANS_TYPE_CLAMP);
-            }
-
+            return render_textured_transition(fadeTimer, transTime, transData, TEX_TRANS_MARIO, TRANS_TYPE_CLAMP);
             break;
         case WARP_TRANSITION_FADE_FROM_BOWSER:
             return render_textured_transition(fadeTimer, transTime, transData, TEX_TRANS_BOWSER, TRANS_TYPE_MIRROR);

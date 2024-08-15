@@ -3238,6 +3238,7 @@ Gfx wario_cap_000_displaylist_mesh_tri_3[] = {
 
 Gfx mat_wario_cap_wario_logo[] = {
 	gsDPPipeSync(),
+	gsDPSetAlphaCompare(G_AC_COVERAGE),
 	gsDPSetCombineLERP(TEXEL0, 0, SHADE, 0, 0, 0, 0, ENVIRONMENT, TEXEL0, 0, SHADE, 0, 0, 0, 0, ENVIRONMENT),
 	gsSPTexture(65535, 65535, 0, 0, 1),
 	gsDPTileSync(),

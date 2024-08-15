@@ -58,7 +58,8 @@ static const u8 menuStr[][32] = {
     "TEXT_OPT_AUDIO",
     "TEXT_EXIT_GAME",
     "TEXT_OPT_CHEATS",
-    "TEXT_OPT_GAME"
+    "TEXT_OPT_GAME",
+    "TEXT_OPT_RT64"
 };
 
 static const u8 optsCameraStr[][32] = {
@@ -83,6 +84,50 @@ static const u8 optsGameStr[][32] = {
     "TEXT_OPT_SWITCH_HUD",
     "TEXT_OPT_BILLBOARDS"
 };
+
+#ifdef RAPI_RT64
+static const u8 optsRT64Str[][32] = {
+    "TEXT_OPT_TARGETFPS",
+    "TEXT_OPT_UPSCALER",
+    "TEXT_OPT_UPSMODE",
+    "TEXT_OPT_UPSSHARP",
+    "TEXT_OPT_RESSCALE",
+    "TEXT_OPT_MAXLIGHTS",
+    "TEXT_OPT_SPHEREL",
+    "TEXT_OPT_GI",
+    "TEXT_OPT_DENOISER",
+    "TEXT_OPT_MOTBLUR",
+    "TEXT_OPT_UPSCALER_OFF",
+    "TEXT_OPT_UPSCALER_AUTO",
+    "TEXT_OPT_UPSCALER_DLSS",
+    "TEXT_OPT_UPSCALER_FSR",
+    "TEXT_OPT_UPSCALER_XESS",
+    "TEXT_OPT_UPSCALER_ULTP",
+    "TEXT_OPT_UPSCALER_PERF",
+    "TEXT_OPT_UPSCALER_BAL",
+    "TEXT_OPT_UPSCALER_QUAL",
+    "TEXT_OPT_UPSCALER_ULTQ",
+    "TEXT_OPT_UPSCALER_NAT"
+};
+
+static const u8 *upscalerChoices[] = {
+    optsRT64Str[10],
+    optsRT64Str[11],
+    optsRT64Str[12],
+    optsRT64Str[13],
+    optsRT64Str[14]
+};
+
+static const u8 *upscalerModeChoices[] = {
+    optsRT64Str[11],
+    optsRT64Str[15],
+    optsRT64Str[16],
+    optsRT64Str[17],
+    optsRT64Str[18],
+    optsRT64Str[19],
+    optsRT64Str[20]
+};
+#endif
 
 static const u8 optsVideoStr[][32] = {
     "TEXT_OPT_FSCREEN",
@@ -311,6 +356,60 @@ static struct Option optsCamera[] = {
     DEF_OPT_SCROLL( optsCameraStr[8], &configCameraDegrade, 0, 100, 1 ),
 };
 
+#ifdef RAPI_RT64
+// FIXME: These conditions are currently unused because the menu system doesn't support disabling options.
+// The condition usage from sm64rt should be replicated if that functionality is added at some point.
+
+extern bool gfx_rt64_dlss_supported();
+extern bool gfx_rt64_fsr_supported();
+extern bool gfx_rt64_xess_supported();
+
+static bool opt_upscaler_enabled() {
+    return gfx_rt64_dlss_supported() || gfx_rt64_fsr_supported() || gfx_rt64_xess_supported();
+}
+
+static bool opt_upscaler_in_use() {
+    switch (configRT64Upscaler) {
+    case 1:
+        return opt_upscaler_enabled();
+    case 2:
+        return gfx_rt64_dlss_supported();
+    case 3:
+        return gfx_rt64_fsr_supported();
+    case 4:
+        return gfx_rt64_xess_supported();
+    default:
+        return false;
+    }
+}
+
+static bool opt_upscaler_mode_enabled() {
+    return opt_upscaler_in_use();
+}
+
+static bool opt_upscaler_sharpness_enabled() {
+    return opt_upscaler_in_use() && (configRT64Upscaler != 4);
+}
+
+static bool opt_resolution_scale_enabled() {
+    return !opt_upscaler_in_use();
+}
+
+static struct Option optsRT64[] = {
+    DEF_OPT_SCROLL( optsRT64Str[0], &configRT64TargetFPS, 30, 360, 30 ),
+    DEF_OPT_CHOICE( optsRT64Str[1], &configRT64Upscaler, upscalerChoices ),
+    DEF_OPT_CHOICE( optsRT64Str[2], &configRT64UpscalerMode, upscalerModeChoices ),
+    DEF_OPT_SCROLL( optsRT64Str[3], &configRT64UpscalerSharpness, 0, 100, 5 ),
+    DEF_OPT_SCROLL( optsRT64Str[4], &configRT64ResScale, 10, 200, 1 ),
+    DEF_OPT_SCROLL( optsRT64Str[5], &configRT64MaxLights, 1, 16, 1 ),
+    DEF_OPT_TOGGLE( optsRT64Str[6], &configRT64SphereLights ),
+    DEF_OPT_TOGGLE( optsRT64Str[7], &configRT64GI ),
+    DEF_OPT_TOGGLE( optsRT64Str[8], &configRT64Denoiser ),
+    DEF_OPT_SCROLL( optsRT64Str[9], &configRT64MotionBlurStrength, 0, 100, 5 ),
+    DEF_OPT_BUTTON( optsVideoStr[10], optvideo_apply ),
+};
+#endif
+
 static struct Option optsControls[] = {
     DEF_OPT_BIND( bindStr[ 2], configKeyA ),
     DEF_OPT_BIND( bindStr[ 3], configKeyB ),
@@ -343,7 +442,9 @@ static struct Option optsVideo[] = {
     //DEF_OPT_CHOICE( optsVideoStr[14], &configCustomWindowResolution, windowChoices ),
     #endif
     //DEF_OPT_TOGGLE( optsVideoStr[15], &configForce4by3 ),
+    #ifndef RAPI_RT64
     DEF_OPT_TOGGLE( optsVideoStr[11], &config60FPS ),
+    #endif
     #if defined(RAPI_D3D11)
     DEF_OPT_TOGGLE( optsVideoStr[12], &configInternalResolutionBool ),
     DEF_OPT_CHOICE( optsVideoStr[13], &configCustomInternalResolution, internalChoices ),
@@ -431,6 +532,9 @@ static struct Option optsCheats[] = {
 /* submenu definitions */
 
 static struct SubMenu menuCamera   = DEF_SUBMENU( menuStr[4], optsCamera );
+#ifdef RAPI_RT64
+static struct SubMenu menuRT64     = DEF_SUBMENU( menuStr[11], optsRT64 );
+#endif
 static struct SubMenu menuGame     = DEF_SUBMENU( menuStr[10], optsGame );
 static struct SubMenu menuControls = DEF_SUBMENU( menuStr[5], optsControls );
 static struct SubMenu menuVideo    = DEF_SUBMENU( menuStr[6], optsVideo );
@@ -442,6 +546,9 @@ static struct SubMenu menuCheats   = DEF_SUBMENU( menuStr[9], optsCheats );
 static struct Option optsMain[] = {
     DEF_OPT_SUBMENU( menuStr[10], &menuGame ),
     DEF_OPT_SUBMENU( menuStr[4], &menuCamera ),
+#ifdef RAPI_RT64
+    DEF_OPT_SUBMENU( menuStr[11], &menuRT64 ),
+#endif
     DEF_OPT_SUBMENU( menuStr[5], &menuControls ),
     DEF_OPT_SUBMENU( menuStr[6], &menuVideo ),
     DEF_OPT_SUBMENU( menuStr[7], &menuAudio ),
@@ -460,10 +567,16 @@ static u8 optmenu_hold_count = 0;
 static struct SubMenu *currentMenu = &menuMain;
 
 static inline s32 wrap_add(s32 a, const s32 b, const s32 min, const s32 max) {
-    a += b;
-    if (a < min) a = max - (min - a) + 1;
-    else if (a > max) a = min + (a - max) - 1;
-    return a;
+    s32 c = a + b;
+    if (c < min) {
+        return max;
+    }
+    else if (c > max) {
+        return min;
+    }
+    else {
+        return c;
+    }
 }
 
 static void uint_to_hex(u32 num, u8 *dst) {

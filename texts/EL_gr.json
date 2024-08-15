@@ -3491,6 +3491,7 @@
         "TEXT_OPT_LANGUAGE": "Current Language",
         "TEXT_OPT_PRECACHE": "Precache Textures",
         "TEXT_OPT_SWITCH_HUD": "Switch HUD",
+
         "TEXT_OPT_BILLBOARDS": "Disable Billboards",
 
         "TEXT_BIND_D_UP": "D-pad Up",

@@ -42,6 +42,9 @@ EXT_OPTIONS_MENU ?= 1
 # Enable Discord Rich Presence
 DISCORDRPC ?= 0
 
+# Enable Expermental Transparency for GL
+TRANSPARENCY_GL ?= 0
+
 # Various workarounds for weird toolchains
 NO_BZERO_BCOPY ?= 0
 NO_LDIV ?= 0
@@ -231,7 +234,7 @@ endif
 endif
 
 # Make tools if out of date
-DUMMY != CC=$(CC) CXX=$(CXX) $(MAKE) -C tools >&2 || echo FAIL
+DUMMY != CC=$(CC) CXX=$(CXX) $(MAKE) -C tools -j1 >&2 || echo FAIL
 ifeq ($(DUMMY),FAIL)
   $(error Failed to build tools)
 endif
@@ -412,6 +415,11 @@ DEP_FILES := $(O_FILES:.o=.d) $(ULTRA_O_FILES:.o=.d) $(GODDARD_O_FILES:.o=.d) $(
 # Segment elf files
 SEG_FILES := $(SEGMENT_ELF_FILES) $(ACTOR_ELF_FILES) $(LEVEL_ELF_FILES)
 
+# RT64 configuration files
+ifeq ($(RENDER_API),RT64)
+include Makefile_rt64
+endif
+
 # Copy the required resources to load texts
 TEXTS_IN_RES_DIR := ./texts
 TEXTS_OUT_RES_DIR := $(BUILD_DIR)/$(BASEDIR)/texts
@@ -574,6 +582,12 @@ ifeq ($(DISCORDRPC),1)
   CFLAGS += -DDISCORDRPC
 endif
 
+# Check for Transparency GL option
+ifeq ($(TRANSPARENCY_GL),1)
+  CC_CHECK += -DTRANSPARENCY_GL
+  CFLAGS += -DTRANSPARENCY_GL
+endif
+
 # Check for texture fix option
 ifeq ($(TEXTURE_FIX),1)
   CC_CHECK += -DTEXTURE_FIX
@@ -654,12 +668,16 @@ AIFF_EXTRACT_CODEBOOK = $(TOOLS_DIR)/aiff_extract_codebook
 VADPCM_ENC = $(TOOLS_DIR)/vadpcm_enc
 EXTRACT_DATA_FOR_MIO = $(TOOLS_DIR)/extract_data_for_mio
 ZEROTERM = $(PYTHON) $(TOOLS_DIR)/zeroterm.py
+R96_TEXTURE_CONVERT = $(PYTHON) $(TOOLS_DIR)/texture_converter.py
 
 ###################### Dependency Check #####################
 
 # Stubbed
 
 ######################## Targets #############################
+
+all:
+	$(R96_TEXTURE_CONVERT)
 
 all: $(EXE)
 ifeq ($(TARGET_SWITCH),1)
@@ -678,6 +696,7 @@ all: $(BASEPACK_PATH)
 res: $(BASEPACK_PATH)
 
 # prepares the basepack.lst
+ifneq ($(SKIP_BASEPACK),1)
 $(BASEPACK_LST): $(EXE)
 	@mkdir -p $(BUILD_DIR)/$(BASEDIR)
 	@touch $(BASEPACK_LST)
@@ -690,6 +709,14 @@ $(BASEPACK_LST): $(EXE)
 	@find levels -name \*.png -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
 	@find textures -name \*.png -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
 	@find db -name \*.* -exec echo "{} {}" >> $(BASEPACK_LST) \;
+ifeq ($(RENDER_API),RT64)
+	@find actors -name \*.dds -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
+	@find levels -name \*.dds -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
+	@find textures -name \*.dds -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
+	@find rt64/textures -name \*.png -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
+	@find rt64/textures -name \*.dds -exec echo "{} gfx/{}" >> $(BASEPACK_LST) \;
+endif
+endif
 
 # prepares the resource ZIP with base data
 $(BASEPACK_PATH): $(BASEPACK_LST)
