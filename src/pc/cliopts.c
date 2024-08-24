@@ -60,6 +60,8 @@ bool parse_cli_opts(int argc, char* argv[]) {
             arg_string("--savepath", argv[++i], gCLIOpts.savePath, SYS_MAX_PATH);
         } else if (!strcmp(argv[i], "--configfile") && (i + 1) < argc) {
             arg_string("--configfile", argv[++i], gCLIOpts.configFile, SYS_MAX_PATH);
+        } else if (!strcmp(argv[i], "--syncframes")) { // VBlanks to wait
+            arg_uint("--syncframes", argv[++i], &gCLIOpts.SyncFrames);
         } else if (!strcmp(argv[i], "--hide-loading-screen")) {
             gCLIOpts.hideLoadingScreen = true;
         } else if (!strcmp(argv[i], "--fullscreen")) {
