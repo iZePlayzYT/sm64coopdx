@@ -920,10 +920,10 @@ static void gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size
 	void *vertexBuffer = buf_vbo;
 	const unsigned int vertexFixedStride = 16 + 12;
 	vertexStride = vertexFixedStride + (useTexture ? 8 : 0) + numInputs * (useAlpha ? 16 : 12);
-	// [TODO] assert(((buf_vbo_len * 4) % vertexStride) == 0);
+	assert(((buf_vbo_len * 4) % vertexStride) == 0);
 
 	vertexCount = (buf_vbo_len * 4) / vertexStride;
-	// [TODO] assert(buf_vbo_num_tris == (vertexCount / 3));
+	assert(buf_vbo_num_tris == (vertexCount / 3));
 
 	// Calculate hash and use it as key.
     XXHash64 hashStream(0);
