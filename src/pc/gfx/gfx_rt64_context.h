@@ -32,7 +32,7 @@
 #define MAX_RENDER_FRAMES				4
 
 struct ShaderProgram {
-    uint32_t shaderId;
+    uint64_t hash;
     uint8_t numInputs;
     bool usedTextures[2];
 	std::unordered_map<uint16_t, RT64_SHADER *> shaderVariantMap;

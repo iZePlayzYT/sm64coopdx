@@ -285,7 +285,7 @@ typedef void (*DestroyScenePtr)(RT64_SCENE* scenePtr);
 typedef RT64_MESH* (*CreateMeshPtr)(RT64_DEVICE* devicePtr, int flags);
 typedef void (*SetMeshPtr)(RT64_MESH* meshPtr, void* vertexArray, int vertexCount, int vertexStride, unsigned int* indexArray, int indexCount);
 typedef void (*DestroyMeshPtr)(RT64_MESH* meshPtr);
-typedef RT64_SHADER *(*CreateShaderPtr)(RT64_DEVICE *devicePtr, unsigned int shaderId, unsigned int filter, unsigned int hAddr, unsigned int vAddr, int flags);
+typedef RT64_SHADER *(*CreateShaderPtr)(RT64_DEVICE *devicePtr, unsigned int hash, unsigned int filter, unsigned int hAddr, unsigned int vAddr, int flags);
 typedef void (*DestroyShaderPtr)(RT64_SHADER *shaderPtr);
 typedef RT64_INSTANCE* (*CreateInstancePtr)(RT64_SCENE* scenePtr);
 typedef void (*SetInstanceDescriptionPtr)(RT64_INSTANCE* instancePtr, RT64_INSTANCE_DESC instanceDesc);

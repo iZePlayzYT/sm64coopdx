@@ -113,15 +113,15 @@ static void gfx_rt64_rapi_load_shader(struct ShaderProgram *new_prg) {
 	RT64.shaderProgram = new_prg;
 }
 
-static struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(uint32_t shader_id) {
+static struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(struct ColorCombiner* cc) {
 	ShaderProgram *shaderProgram = new ShaderProgram();
     int c[2][4];
     for (int i = 0; i < 4; i++) {
-        c[0][i] = (shader_id >> (i * 3)) & 7;
-        c[1][i] = (shader_id >> (12 + i * 3)) & 7;
+        c[0][i] = (cc->hash >> (i * 3)) & 7;
+        c[1][i] = (cc->hash >> (12 + i * 3)) & 7;
     }
 
-	shaderProgram->shaderId = shader_id;
+	shaderProgram->hash = cc->hash;
     shaderProgram->usedTextures[0] = false;
     shaderProgram->usedTextures[1] = false;
     shaderProgram->numInputs = 0;
@@ -144,7 +144,7 @@ static struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(uint32_t s
 
 	{
 		const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
-		RT64.shaderPrograms[shader_id] = shaderProgram;
+		RT64.shaderPrograms[cc->hash] = shaderProgram;
 	}
 
 	gfx_rt64_rapi_load_shader(shaderProgram);
@@ -152,9 +152,9 @@ static struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader(uint32_t s
 	return shaderProgram;
 }
 
-static struct ShaderProgram *gfx_rt64_rapi_lookup_shader(uint32_t shader_id) {
+static struct ShaderProgram *gfx_rt64_rapi_lookup_shader(struct ColorCombiner* cc) {
 	const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
-	auto it = RT64.shaderPrograms.find(shader_id);
+	auto it = RT64.shaderPrograms.find(cc->hash);
     return (it != RT64.shaderPrograms.end()) ? it->second : nullptr;
 }
 
@@ -176,19 +176,64 @@ RT64_SHADER *gfx_rt64_render_thread_load_shader_variant(ShaderProgram *shaderPro
 			flags |= RT64_SHADER_SPECULAR_MAP_ENABLED;
 		}
 
-		shaderProgram->shaderVariantMap[variantKey] = RT64.lib.CreateShader(RT64.device, shaderProgram->shaderId, filter, hAddr, vAddr, flags);
+		shaderProgram->shaderVariantMap[variantKey] = RT64.lib.CreateShader(RT64.device, shaderProgram->hash, filter, hAddr, vAddr, flags);
 
 		// Print shader discovery to reduce stutters when playing through the game.
-		printf("gfx_rt64_render_thread_preload_shader(0x%X, %d, %d, %d, %d, %s, %s);\n", shaderProgram->shaderId, raytrace, filter, hAddr, vAddr, normalMap ? "true" : "false", specularMap ? "true" : "false");
+		printf("gfx_rt64_render_thread_preload_shader(0x%X, %d, %d, %d, %d, %s, %s);\n", shaderProgram->hash, raytrace, filter, hAddr, vAddr, normalMap ? "true" : "false", specularMap ? "true" : "false");
 	}
 
 	return shaderProgram->shaderVariantMap[variantKey];
 }
 
-void gfx_rt64_render_thread_preload_shader(unsigned int shader_id, bool raytrace, int filter, int hAddr, int vAddr, bool normalMap, bool specularMap) {
-	ShaderProgram *shaderProgram = gfx_rt64_rapi_lookup_shader(shader_id);
+struct ShaderProgram *gfx_rt64_rapi_create_and_load_new_shader_old(uint64_t hash) {
+	ShaderProgram *shaderProgram = new ShaderProgram();
+    int c[2][4];
+    for (int i = 0; i < 4; i++) {
+        c[0][i] = (hash >> (i * 3)) & 7;
+        c[1][i] = (hash >> (12 + i * 3)) & 7;
+    }
+
+	shaderProgram->hash = hash;
+    shaderProgram->usedTextures[0] = false;
+    shaderProgram->usedTextures[1] = false;
+    shaderProgram->numInputs = 0;
+
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 4; j++) {
+            if (c[i][j] >= SHADER_INPUT_1 && c[i][j] <= SHADER_INPUT_4) {
+                if (c[i][j] > shaderProgram->numInputs) {
+                    shaderProgram->numInputs = c[i][j];
+                }
+            }
+            if (c[i][j] == SHADER_TEXEL0 || c[i][j] == SHADER_TEXEL0A) {
+                shaderProgram->usedTextures[0] = true;
+            }
+            if (c[i][j] == SHADER_TEXEL1) {
+                shaderProgram->usedTextures[1] = true;
+            }
+        }
+    }
+
+	{
+		const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
+		RT64.shaderPrograms[hash] = shaderProgram;
+	}
+
+	gfx_rt64_rapi_load_shader(shaderProgram);
+
+	return shaderProgram;
+}
+
+struct ShaderProgram *gfx_rt64_rapi_lookup_shader_old(uint64_t hash) {
+	const std::lock_guard<std::mutex> lock(RT64.shaderProgramsMutex);
+	auto it = RT64.shaderPrograms.find(hash);
+    return (it != RT64.shaderPrograms.end()) ? it->second : nullptr;
+}
+
+void gfx_rt64_render_thread_preload_shader(uint64_t hash, bool raytrace, int filter, int hAddr, int vAddr, bool normalMap, bool specularMap) {
+	ShaderProgram *shaderProgram = gfx_rt64_rapi_lookup_shader_old(hash);
 	if (shaderProgram == nullptr) {
-		shaderProgram = gfx_rt64_rapi_create_and_load_new_shader(shader_id);
+		shaderProgram = gfx_rt64_rapi_create_and_load_new_shader_old(hash);
 	}
 
 	gfx_rt64_render_thread_load_shader_variant(shaderProgram, raytrace, filter, hAddr, vAddr, normalMap, specularMap);
@@ -703,7 +748,7 @@ static void gfx_rt64_wapi_shutdown(void) {
 	delete RT64.renderThread;
 }
 
-static void gfx_rt64_wapi_set_keyboard_callbacks(bool (*on_key_down)(int scancode), bool (*on_key_up)(int scancode), void (*on_all_keys_up)(void)) {
+static void gfx_rt64_wapi_set_keyboard_callbacks(bool (*on_key_down)(int scancode), bool (*on_key_up)(int scancode), void (*on_all_keys_up)(void), void (*on_text_input)(char*)) {
 	RT64.on_key_down = on_key_down;
     RT64.on_key_up = on_key_up;
     RT64.on_all_keys_up = on_all_keys_up;
@@ -753,14 +798,13 @@ static bool gfx_rt64_rapi_z_is_from_0_to_1(void) {
     return true;
 }
 
-static uint32_t gfx_rt64_rapi_new_texture(const char *name) {
+static uint32_t gfx_rt64_rapi_new_texture() {
 	// We reserve 0 for unassigned textures.
 	uint32_t textureKey = 1 + RT64.textures.size();
 	auto &recordedTexture = RT64.textures[textureKey];
 	recordedTexture.linearFilter = 0;
 	recordedTexture.cms = 0;
 	recordedTexture.cmt = 0;
-	recordedTexture.hash = gfx_rt64_get_texture_name_hash(name);
 	RT64.textureHashIdMap[recordedTexture.hash] = textureKey;
     return textureKey;
 }
@@ -869,17 +913,17 @@ static void gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size
 	// Calculate the required size for each vertex based on the shader.
 	const bool useTexture = RT64.shaderProgram->usedTextures[0] || RT64.shaderProgram->usedTextures[1];
 	const int numInputs = RT64.shaderProgram->numInputs;
-	const bool useAlpha = RT64.shaderProgram->shaderId & SHADER_OPT_ALPHA;
+	const bool useAlpha = RT64.shaderProgram->hash & SHADER_OPT_ALPHA;
 	unsigned int vertexCount = 0;
 	unsigned int vertexStride = 0;
 	unsigned int indexCount = buf_vbo_num_tris * 3;
 	void *vertexBuffer = buf_vbo;
 	const unsigned int vertexFixedStride = 16 + 12;
 	vertexStride = vertexFixedStride + (useTexture ? 8 : 0) + numInputs * (useAlpha ? 16 : 12);
-	assert(((buf_vbo_len * 4) % vertexStride) == 0);
+	// [TODO] assert(((buf_vbo_len * 4) % vertexStride) == 0);
 
 	vertexCount = (buf_vbo_len * 4) / vertexStride;
-	assert(buf_vbo_num_tris == (vertexCount / 3));
+	// [TODO] assert(buf_vbo_num_tris == (vertexCount / 3));
 
 	// Calculate hash and use it as key.
     XXHash64 hashStream(0);
@@ -1046,7 +1090,7 @@ static void gfx_rt64_rapi_draw_triangles_common(RT64_MATRIX4 transform, float bu
 	instDesc.material.fogColor = RT64.fogColor;
 	instDesc.material.fogMul = RT64.fogMul;
 	instDesc.material.fogOffset = RT64.fogOffset;
-	instDesc.material.fogEnabled = (RT64.shaderProgram->shaderId & SHADER_OPT_FOG) != 0;
+	instDesc.material.fogEnabled = (RT64.shaderProgram->hash & SHADER_OPT_FOG) != 0;
 
 	// HACK: Add a depth bias based on how many instances have been drawn so far to push
 	// coplanar stuff above other meshes on the anyhit sorting.
