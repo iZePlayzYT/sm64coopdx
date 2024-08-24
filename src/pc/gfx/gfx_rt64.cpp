@@ -920,9 +920,24 @@ static void gfx_rt64_rapi_process_mesh(float buf_vbo[], size_t buf_vbo_len, size
 	void *vertexBuffer = buf_vbo;
 	const unsigned int vertexFixedStride = 16 + 12;
 	vertexStride = vertexFixedStride + (useTexture ? 8 : 0) + numInputs * (useAlpha ? 16 : 12);
+	printf("[Debug Info]\n");
+    printf("- useTexture: %d\n", useTexture);
+    printf("- numInputs: %d\n", numInputs);
+    printf("- useAlpha: %d\n", useAlpha);
+    printf("- vertexFixedStride: %u\n", vertexFixedStride);
+    printf("- vertexStride: %u\n", vertexStride);
+    printf("- buf_vbo_len: %zu\n", buf_vbo_len);
+    printf("- buf_vbo_num_tris: %zu\n", buf_vbo_num_tris);
+    printf("- indexCount: %u\n", indexCount);
+    printf("[Calculating if (buf_vbo_len * 4) %% vertexStride == 0]\n");
+    printf("# (buf_vbo_len * 4) = %zu\n", buf_vbo_len * 4);
+    printf("# (buf_vbo_len * 4) %% vertexStride = %zu\n", (buf_vbo_len * 4) % vertexStride);
 	assert(((buf_vbo_len * 4) % vertexStride) == 0);
 
 	vertexCount = (buf_vbo_len * 4) / vertexStride;
+    printf("- vertexCount: %u\n", vertexCount);
+    printf("[Calculating if buf_vbo_num_tris == (vertexCount / 3)]\n");
+    printf("# vertexCount / 3 = %u\n", vertexCount / 3);
 	assert(buf_vbo_num_tris == (vertexCount / 3));
 
 	// Calculate hash and use it as key.
