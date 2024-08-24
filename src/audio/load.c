@@ -978,6 +978,8 @@ void audio_init() {
 #else
     size = ALIGN16(gSequenceCount * sizeof(ALSeqData) + 4);
 #endif
+
+#ifndef EXTERNAL_DATA
     gSeqFileHeader = soundAlloc(&gAudioInitPool, size);
     audio_dma_copy_immediate((uintptr_t) data, gSeqFileHeader, size);
     alSeqFileNew(gSeqFileHeader, data);
@@ -1008,8 +1010,29 @@ void audio_init() {
     data = LOAD_DATA(gBankSetsData);
     gAlBankSets = soundAlloc(&gAudioInitPool, 0x100);
     audio_dma_copy_immediate((uintptr_t) data, gAlBankSets, 0x100);
+#else
+    // Load header for sequence data
+    data = LOAD_DATA(gMusicData);
+    gSeqFileHeader = data;
+
+    alSeqFileNew(gSeqFileHeader, data);
+    gSequenceCount = gSeqFileHeader->seqCount;
+
+    // Load header for CTL
+    data = LOAD_DATA(gSoundDataADSR);
+    gAlCtlHeader = data;
+    alSeqFileNew(gAlCtlHeader, data);
+    gCtlEntries = malloc(gAlCtlHeader->seqCount * sizeof(struct CtlEntry));
+
+    // Load header for TBL
+    data = LOAD_DATA(gSoundDataRaw);
+    gAlTbl = data;
+    alSeqFileNew(gAlTbl, data);
+
+    // Load bank sets for each sequence
+    gAlBankSets = LOAD_DATA(gBankSetsData);
+#endif
 
     init_sequence_players();
     gAudioLoadLock = AUDIO_LOCK_NOT_LOADING;
 }
-

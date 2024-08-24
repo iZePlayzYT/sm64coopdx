@@ -7,6 +7,8 @@
 #include "types.h"
 #include "game/memory.h"
 
+#include "pc/gfx/gfx_pc.h"
+
 #define GRAPH_RENDER_ACTIVE         (1 << 0)
 #define GRAPH_RENDER_CHILDREN_FIRST (1 << 1)
 #define GRAPH_RENDER_BILLBOARD      (1 << 2)
@@ -120,6 +122,9 @@ struct DisplayListNode
     Mtx *transform;
     void *displayList;
     struct DisplayListNode *next;
+#ifdef GFX_ENABLE_GRAPH_NODE_MODS
+    GraphNodeGfxInfo gfxInfo;
+#endif
 };
 
 /** GraphNode that manages the 8 top-level display lists that will be drawn

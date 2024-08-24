@@ -7,6 +7,7 @@
 #include <ultra64.h>
 #include "macros.h"
 
+#include "pc/gfx/gfx_rendering_api.h"
 
 // Certain functions are marked as having return values, but do not
 // actually return a value. This causes undefined behavior, which we'd rather
@@ -106,6 +107,9 @@ struct GraphNode
     /*0x08*/ struct GraphNode *next;
     /*0x0C*/ struct GraphNode *parent;
     /*0x10*/ struct GraphNode *children;
+#ifdef GFX_SEPARATE_PROJECTIONS
+    u32 uid;
+#endif
 };
 
 // struct AnimInfo?
@@ -133,6 +137,9 @@ struct GraphNodeObject
     /*0x4C*/ struct SpawnInfo *unk4C;
     /*0x50*/ Mat4 *throwMatrix; // matrix ptr
     /*0x54*/ Vec3f cameraToObject;
+#ifdef GFX_SEPARATE_PROJECTIONS
+    u32 skipInterpolationTimestamp;
+#endif
 };
 
 struct ObjectNode

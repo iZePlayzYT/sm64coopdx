@@ -2,7 +2,6 @@
 #define _SM64_PLATFORM_H_
 
 #include <stdbool.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,7 +16,6 @@ extern const char *sys_ropaths[];
 char *sys_strdup(const char *src);
 char *sys_strlwr(char *src);
 int sys_strcasecmp(const char *s1, const char *s2);
-void sys_sleep(const uint64_t us);
 
 // path stuff
 const char *sys_user_path(void);

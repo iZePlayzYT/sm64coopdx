@@ -93,6 +93,19 @@ bool         configHUD           = true;
 #ifdef DISCORDRPC
 bool         configDiscordRPC    = true;
 #endif
+#ifdef RAPI_RT64
+unsigned int configRT64TargetFPS = 30;
+unsigned int configRT64ResScale = 100;
+unsigned int configRT64MaxLights = 6;
+unsigned int configRT64MotionBlurStrength = 0;
+unsigned int configRT64UpscalerSharpness = 0;
+bool         configRT64SphereLights = false;
+bool         configRT64GI = false;
+unsigned int configRT64Upscaler = 1;
+unsigned int configRT64UpscalerMode = 0;
+bool         configRT64Denoiser = false;
+bool         configRT64StaticMeshCache = true;
+#endif
 
 static const struct ConfigOption options[] = {
     {.name = "fullscreen",           .type = CONFIG_TYPE_BOOL, .boolValue = &configWindow.fullscreen},
@@ -140,7 +153,20 @@ static const struct ConfigOption options[] = {
     {.name = "skip_intro",           .type = CONFIG_TYPE_BOOL, .boolValue = &configSkipIntro},
     #ifdef DISCORDRPC
     {.name = "discordrpc_enable",    .type = CONFIG_TYPE_BOOL, .boolValue = &configDiscordRPC},
-    #endif 
+    #endif
+    #ifdef RAPI_RT64
+    {.name = "rt64_target_fps",                .type = CONFIG_TYPE_UINT, .uintValue = &configRT64TargetFPS},
+    {.name = "rt64_res_scale",                 .type = CONFIG_TYPE_UINT, .uintValue = &configRT64ResScale},
+    {.name = "rt64_max_lights",                .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MaxLights},
+    {.name = "rt64_sphere_lights",             .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64SphereLights},
+    {.name = "rt64_gi",                        .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64GI},
+    {.name = "rt64_upscaler",                  .type = CONFIG_TYPE_UINT, .uintValue = &configRT64Upscaler},
+    {.name = "rt64_upscaler_mode_common",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerMode},
+    {.name = "rt64_upscaler_sharpness",        .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerSharpness},
+    {.name = "rt64_denoiser",                  .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64Denoiser},
+    {.name = "rt64_static_mesh_cache",         .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64StaticMeshCache},
+    {.name = "rt64_motion_blur_strength",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64MotionBlurStrength},
+    #endif
 };
 
 // Reads an entire line from a file (excluding the newline character) and returns an allocated string

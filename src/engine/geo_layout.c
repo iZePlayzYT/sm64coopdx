@@ -6,6 +6,8 @@
 #include "game/memory.h"
 #include "graph_node.h"
 
+#include "pc/gfx/gfx_pc.h"
+
 typedef void (*GeoLayoutCommandProc)(void);
 
 GeoLayoutCommandProc GeoLayoutJumpTable[] = {
@@ -47,6 +49,15 @@ GeoLayoutCommandProc GeoLayoutJumpTable[] = {
 struct GraphNode gObjParentGraphNode;
 struct AllocOnlyPool *gGraphNodePool;
 struct GraphNode *gCurRootGraphNode;
+
+#ifdef GFX_SEPARATE_PROJECTIONS
+#define GRAPH_NODE_SWITCH_MAX_COUNT 8
+u32 gCurGraphNodeSwitchUID[GRAPH_NODE_SWITCH_MAX_COUNT];
+s16 gCurGraphNodeSwitchIndex[GRAPH_NODE_SWITCH_MAX_COUNT];
+u32 gCurGraphNodeSwitchCount = 0;
+u32 gCurGraphNodeUID = 1;
+void *gCurGeoLayout = NULL;
+#endif
 
 UNUSED s32 D_8038BCA8;
 
@@ -147,6 +158,12 @@ void geo_layout_cmd_open_node(void) {
 
 // 0x05: Close node
 void geo_layout_cmd_close_node(void) {
+#ifdef GFX_SEPARATE_PROJECTIONS
+    if ((gCurGraphNodeSwitchCount > 0) && (gCurGraphNodeSwitchIndex[gCurGraphNodeSwitchCount - 1] == gCurGraphNodeIndex)) {
+        gCurGraphNodeSwitchCount--;
+    }
+#endif
+
     gCurGraphNodeIndex--;
     gGeoLayoutCommand += 0x04 << CMD_SIZE_SHIFT;
 }
@@ -345,6 +362,12 @@ void geo_layout_cmd_node_switch_case(void) {
     register_scene_graph_node(&graphNode->fnNode.node);
 
     gGeoLayoutCommand += 0x08 << CMD_SIZE_SHIFT;
+
+#ifdef GFX_SEPARATE_PROJECTIONS
+    gCurGraphNodeSwitchUID[gCurGraphNodeSwitchCount] = gCurGraphNodeUID;
+    gCurGraphNodeSwitchIndex[gCurGraphNodeSwitchCount] = gCurGraphNodeIndex + 1;
+    gCurGraphNodeSwitchCount++;
+#endif
 }
 
 /*
@@ -781,6 +804,10 @@ struct GraphNode *process_geo_layout(struct AllocOnlyPool *pool, void *segptr) {
     gGeoLayoutReturnIndex = 2; // stack index is often copied here?
 
     gGeoLayoutCommand = segmented_to_virtual(segptr);
+
+#ifdef GFX_ENABLE_GRAPH_NODE_MODS
+    gCurGeoLayout = gGeoLayoutCommand;
+#endif
 
     gGraphNodePool = pool;
 
