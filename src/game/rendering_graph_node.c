@@ -621,7 +621,7 @@ static void geo_process_camera(struct GraphNodeCamera *node) {
     }
 
 #ifdef GFX_SEPARATE_PROJECTIONS
-    gfx_set_camera_matrix(mtx->m);
+    gfx_set_camera_matrix(gCamera->mtx);
 #endif
 
     if (node->fnNode.node.children != 0) {

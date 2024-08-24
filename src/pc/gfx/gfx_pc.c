@@ -527,11 +527,7 @@ static bool gfx_texture_cache_lookup(int tile, struct TextureHashmapNode **n, co
     if (!node) { return false; }
     *node = &gfx_texture_cache.pool[gfx_texture_cache.pool_pos++];
     if ((*node)->texture_addr == NULL) {
-#ifdef GFX_REQUIRE_TEXTURE_NAME
-        (*node)->texture_id = gfx_rapi->new_texture((const char *)(orig_addr));
-#else
         (*node)->texture_id = gfx_rapi->new_texture();
-#endif
     }
     gfx_rapi->select_texture(tile, (*node)->texture_id);
     gfx_rapi->set_sampler_parameters(tile, false, 0, 0);
@@ -1290,7 +1286,7 @@ static void OPTIMIZE_O3 gfx_sp_tri1(uint8_t vtx1_idx, uint8_t vtx2_idx, uint8_t 
     }
 
 #ifdef GFX_SEPARATE_FOG
-    if (use_fog) {
+    if (cm->use_fog) {
         gfx_rapi->set_fog(rdp.fog_color.r, rdp.fog_color.g, rdp.fog_color.b, rsp.fog_mul, rsp.fog_offset);
     }
 #endif
@@ -2114,10 +2110,6 @@ void gfx_init(struct GfxWindowManagerAPI *wapi, struct GfxRenderingAPI *rapi, co
     gfx_rapi->init();
 
     gfx_cc_precomp();
-
-#ifdef GFX_SEPARATE_SKYBOX
-    gfx_init_skybox();
-#endif
 
     gGfxInited = true;
 }

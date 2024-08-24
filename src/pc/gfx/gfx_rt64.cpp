@@ -2169,7 +2169,6 @@ struct GfxRenderingAPI gfx_rt64_rapi = {
 	gfx_rt64_rapi_draw_triangles_ortho,
     gfx_rt64_rapi_draw_triangles_persp,
 	gfx_rt64_rapi_set_graph_node_mod,
-	gfx_rt64_rapi_set_skybox,
     gfx_rt64_rapi_init,
 	gfx_rt64_rapi_on_resize,
     gfx_rt64_rapi_start_frame,
