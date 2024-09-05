@@ -446,6 +446,16 @@ int main(int argc, char *argv[]) {
         snprintf(configJoinIp, MAX_CONFIG_STRING, "%s", gCLIOpts.joinIp);
         configJoinPort = gCLIOpts.networkPort;
         network_init(NT_CLIENT, false);
+    } else if (gCLIOpts.network == NT_COOPNET) {
+        configNetworkSystem = NS_COOPNET;
+
+        // horrible, hacky fix for mods that access marioObj straight away
+        // best fix: host with the standard main menu method
+        static struct Object sHackyObject = { 0 };
+        gMarioStates[0].marioObj = &sHackyObject;
+
+        extern void djui_panel_do_host(bool reconnecting, bool playSound);
+        djui_panel_do_host(NULL, false);
     } else if (gCLIOpts.network == NT_SERVER) {
         configNetworkSystem = NS_SOCKET;
         configHostPort = gCLIOpts.networkPort;

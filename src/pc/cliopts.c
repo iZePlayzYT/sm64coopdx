@@ -68,6 +68,8 @@ bool parse_cli_opts(int argc, char* argv[]) {
             gCLIOpts.fullscreen = 2;
         } else if (!strcmp(argv[i], "--skip-intro")) {
             gCLIOpts.skipIntro = true;
+        } else if (!strcmp(argv[i], "--coopnet")) {
+            gCLIOpts.network = NT_COOPNET;
         } else if (!strcmp(argv[i], "--server") && (i + 1) < argc) {
             gCLIOpts.network = NT_SERVER;
             arg_uint("--server <port>", argv[++i], &gCLIOpts.networkPort);

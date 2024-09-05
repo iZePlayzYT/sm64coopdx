@@ -4,7 +4,6 @@
 #include "djui_panel_language.h"
 #include "djui_panel_pause.h"
 #include "djui_panel_join.h"
-#include "djui_panel_host.h"
 #include "djui_panel_join_message.h"
 #include "djui_fps_display.h"
 #include "../debuglog.h"
@@ -106,7 +105,7 @@ void djui_init_late(void) {
     djui_panel_main_create(NULL);
     if (configLanguage[0] == '\0') {
         gPanelLanguageOnStartup = true;
-        djui_panel_host_create(NULL);
+        djui_panel_language_create(NULL);
     }
 
     // djui_panel_debug_create();
