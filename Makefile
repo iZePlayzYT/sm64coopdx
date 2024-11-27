@@ -76,11 +76,11 @@ NO_LDIV ?= 0
 # Backend selection
 
 # Renderers: GL, GL_LEGACY, D3D11, DUMMY
-RENDER_API ?= GL
+RENDER_API ?= D3D11
 # Window managers: SDL1, SDL2, DXGI (forced if RENDER_API is D3D11), DUMMY (forced if RENDER_API is DUMMY)
-WINDOW_API ?= SDL2
+WINDOW_API ?= DXGI
 # Audio backends: SDL1, SDL2, DUMMY
-AUDIO_API ?= SDL2
+AUDIO_API ?= DUMMY
 # Controller backends (can have multiple, space separated): SDL2, SDL1
 CONTROLLER_API ?= SDL2
 

@@ -462,6 +462,10 @@ int main(int argc, char *argv[]) {
 
         extern void djui_panel_do_host(bool reconnecting, bool playSound);
         djui_panel_do_host(NULL, false);
+    } else if (gCLIOpts.network == NT_COOPNET) {
+        configNetworkSystem = NS_COOPNET;
+        extern void djui_panel_do_host(bool reconnecting, bool playSound);
+        djui_panel_do_host(NULL, false);
     } else {
         network_init(NT_NONE, false);
     }
