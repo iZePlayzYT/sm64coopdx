@@ -2,7 +2,7 @@
 
 ---
 
-[< prev](functions.md) | [1](functions.md) | 2 | [3](functions-3.md) | [4](functions-4.md) | [5](functions-5.md) | [6](functions-6.md) | [next >](functions-3.md)]
+[< prev](functions.md) | [1](functions.md) | 2 | [3](functions-3.md) | [4](functions-4.md) | [5](functions-5.md) | [6](functions-6.md) | [7](functions-7.md) | [next >](functions-3.md)]
 
 
 ---
@@ -11942,63 +11942,6 @@ Behavior loop function for UV texture scrolling
 
 <br />
 
-## [spawn_ambient_light](#spawn_ambient_light)
-
-### Description
-Spawns a lighting engine point light
-
-### Lua Example
-`local ObjectValue = spawn_ambient_light(x, y, z, r, g, b)`
-
-### Parameters
-| Field | Type |
-| ----- | ---- |
-| x | `number` |
-| y | `number` |
-| z | `number` |
-| r | `integer` |
-| g | `integer` |
-| b | `integer` |
-
-### Returns
-[Object](structs.md#Object)
-
-### C Prototype
-`struct Object* spawn_ambient_light(f32 x, f32 y, f32 z, u8 r, u8 g, u8 b);`
-
-[:arrow_up_small:](#)
-
-<br />
-
-## [spawn_point_light](#spawn_point_light)
-
-### Description
-Spawns a lighting engine ambient light
-
-### Lua Example
-`local ObjectValue = spawn_point_light(x, y, z, r, g, b, radius)`
-
-### Parameters
-| Field | Type |
-| ----- | ---- |
-| x | `number` |
-| y | `number` |
-| z | `number` |
-| r | `integer` |
-| g | `integer` |
-| b | `integer` |
-| radius | `number` |
-
-### Returns
-[Object](structs.md#Object)
-
-### C Prototype
-`struct Object* spawn_point_light(f32 x, f32 y, f32 z, u8 r, u8 g, u8 b, f32 radius);`
-
-[:arrow_up_small:](#)
-
-<br />
-
 ## [bhv_ambient_light_update](#bhv_ambient_light_update)
 
 ### Description
@@ -12138,5 +12081,5 @@ Spawns a Star that won't make Mario exit the level with an ID corresponding to t
 <br />
 ---
 
-[< prev](functions.md) | [1](functions.md) | 2 | [3](functions-3.md) | [4](functions-4.md) | [5](functions-5.md) | [6](functions-6.md) | [next >](functions-3.md)]
+[< prev](functions.md) | [1](functions.md) | 2 | [3](functions-3.md) | [4](functions-4.md) | [5](functions-5.md) | [6](functions-6.md) | [7](functions-7.md) | [next >](functions-3.md)]
 

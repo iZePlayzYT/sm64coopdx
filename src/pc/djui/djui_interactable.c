@@ -211,14 +211,21 @@ bool djui_interactable_on_key_down(int scancode) {
         }
     }
 
-    if (gDjuiChatBox != NULL && !gDjuiChatBoxFocus) {
+    if (gDjuiChatBox != NULL) {
         bool pressChat = false;
+        bool pressChatCommand = false;
         for (int i = 0; i < MAX_BINDS; i++) {
             if (scancode == (int)configKeyChat[i]) { pressChat = true; }
+            if (scancode == (int)configKeyChatCommand[i]) { pressChatCommand = true; }
         }
 
-        if (pressChat && !gDjuiConsoleFocus) {
+        if (pressChat && !gDjuiConsoleFocus && !gDjuiChatBoxFocus) {
             djui_chat_box_toggle();
+            return true;
+        }
+
+        if (pressChatCommand && !gDjuiConsoleFocus) {
+            djui_chat_box_open_with_text("/");
             return true;
         }
     }
@@ -422,7 +429,7 @@ void djui_interactable_update(void) {
     // update focused
     if (gInteractableFocus) {
         u16 mainButtons = PAD_BUTTON_A | PAD_BUTTON_B;
-        if ((mouseButtons & MOUSE_BUTTON_1) && !(sLastMouseButtons && MOUSE_BUTTON_1) && !djui_cursor_inside_base(gInteractableFocus)) {
+        if ((mouseButtons & MOUSE_BUTTON_1) && !(sLastMouseButtons & MOUSE_BUTTON_1) && !djui_cursor_inside_base(gInteractableFocus)) {
             // clicked outside of focus
             if (!gDjuiChatBoxFocus) {
                 djui_interactable_set_input_focus(NULL);

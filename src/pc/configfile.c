@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <ctype.h>
 
 #include "platform.h"
@@ -84,7 +87,8 @@ ConfigStick configStick = { 0 };
 // display settings
 unsigned int configFiltering                      = 2; // 0 = Nearest, 1 = Bilinear, 2 = Trilinear
 bool         configShowFPS                        = false;
-bool         configUncappedFramerate              = true;
+bool         configShowPing                       = false;
+enum RefreshRateMode configFramerateMode          = RRM_AUTO;
 unsigned int configFrameLimit                     = 60;
 unsigned int configInterpolationMode              = 1;
 unsigned int configDrawDistance                   = 4;
@@ -113,6 +117,7 @@ unsigned int configKeyStickDown[MAX_BINDS]        = { 0x001F,     VK_INVALID, VK
 unsigned int configKeyStickLeft[MAX_BINDS]        = { 0x001E,     VK_INVALID, VK_INVALID };
 unsigned int configKeyStickRight[MAX_BINDS]       = { 0x0020,     VK_INVALID, VK_INVALID };
 unsigned int configKeyChat[MAX_BINDS]             = { 0x001C,     VK_INVALID, VK_INVALID };
+unsigned int configKeyChatCommand[MAX_BINDS]      = { VK_INVALID, VK_INVALID, VK_INVALID };
 unsigned int configKeyPlayerList[MAX_BINDS]       = { 0x000F,     0x1004,     VK_INVALID };
 unsigned int configKeyDUp[MAX_BINDS]              = { 0x0147,     0x100b,     VK_INVALID };
 unsigned int configKeyDDown[MAX_BINDS]            = { 0x014f,     0x100c,     VK_INVALID };
@@ -127,7 +132,10 @@ unsigned int configRumbleStrength                 = 50;
 unsigned int configGamepadNumber                  = 0;
 bool         configBackgroundGamepad              = true;
 bool         configDisableGamepads                = false;
-bool         configUseStandardKeyBindingsChat     = false;
+bool         configUseStandardKeyBindingsChat     = true;
+bool         configChatCharCounter                = true;
+bool         configDisableChatWhenClosed          = false;
+unsigned int configChatWidth                      = 800;
 bool         configSmoothScrolling                = false;
 // free camera settings
 bool         configEnableFreeCamera               = false;
@@ -229,7 +237,8 @@ static const struct ConfigOption options[] = {
     // display settings
     {.name = "texture_filtering",              .type = CONFIG_TYPE_UINT, .uintValue = &configFiltering},
     {.name = "show_fps",                       .type = CONFIG_TYPE_BOOL, .boolValue = &configShowFPS},
-    {.name = "uncapped_framerate",             .type = CONFIG_TYPE_BOOL, .boolValue = &configUncappedFramerate},
+    {.name = "show_ping",                      .type = CONFIG_TYPE_BOOL, .boolValue = &configShowPing},
+    {.name = "framerate_mode",                 .type = CONFIG_TYPE_UINT, .uintValue = &configFramerateMode},
     {.name = "frame_limit",                    .type = CONFIG_TYPE_UINT, .uintValue = &configFrameLimit},
     {.name = "interpolation_mode",             .type = CONFIG_TYPE_UINT, .uintValue = &configInterpolationMode},
     {.name = "coop_draw_distance",             .type = CONFIG_TYPE_UINT, .uintValue = &configDrawDistance},
@@ -258,6 +267,7 @@ static const struct ConfigOption options[] = {
     {.name = "key_stickleft",                  .type = CONFIG_TYPE_BIND, .uintValue = configKeyStickLeft},
     {.name = "key_stickright",                 .type = CONFIG_TYPE_BIND, .uintValue = configKeyStickRight},
     {.name = "key_chat",                       .type = CONFIG_TYPE_BIND, .uintValue = configKeyChat},
+    {.name = "key_chat_command",               .type = CONFIG_TYPE_BIND, .uintValue = configKeyChatCommand},
     {.name = "key_playerlist",                 .type = CONFIG_TYPE_BIND, .uintValue = configKeyPlayerList},
     {.name = "key_dup",                        .type = CONFIG_TYPE_BIND, .uintValue = configKeyDUp},
     {.name = "key_ddown",                      .type = CONFIG_TYPE_BIND, .uintValue = configKeyDDown},
@@ -275,6 +285,9 @@ static const struct ConfigOption options[] = {
     {.name = "disable_gamepads",               .type = CONFIG_TYPE_BOOL, .boolValue = &configDisableGamepads},
 #endif
     {.name = "use_standard_key_bindings_chat", .type = CONFIG_TYPE_BOOL, .boolValue = &configUseStandardKeyBindingsChat},
+    {.name = "chat_width",                     .type = CONFIG_TYPE_UINT, .uintValue = &configChatWidth},
+    {.name = "chat_char_counter",              .type = CONFIG_TYPE_BOOL, .boolValue = &configChatCharCounter},
+    {.name = "disable_chat_when_closed",       .type = CONFIG_TYPE_BOOL, .boolValue = &configDisableChatWhenClosed},
     {.name = "smooth_scrolling",               .type = CONFIG_TYPE_BOOL, .boolValue = &configSmoothScrolling},
     {.name = "stick_rotate_left",              .type = CONFIG_TYPE_BOOL, .boolValue = &configStick.rotateLeft},
     {.name = "stick_invert_left_x",            .type = CONFIG_TYPE_BOOL, .boolValue = &configStick.invertLeftX},
@@ -670,6 +683,23 @@ static void configfile_load_internal(const char *filename, bool* error) {
     if (file == NULL) {
         // Create a new config file and save defaults
         printf("Config file '%s' not found. Creating it.\n", filename);
+        // set sensible default for chat command key depending on keyboard layout
+        if (configKeyChatCommand[0] == VK_INVALID && configKeyChatCommand[1] == VK_INVALID && configKeyChatCommand[2] == VK_INVALID) {
+#ifdef _WIN32
+            HKL hkl = GetKeyboardLayout(0);
+            LANGID lang = LOWORD(hkl);
+            switch (PRIMARYLANGID(lang)) {
+                case LANG_GERMAN:
+                    configKeyChatCommand[0] = 0x002B; // '#' on QWERTZ (OEM_5 position)
+                    break;
+                default:
+                    configKeyChatCommand[0] = 0x0035; // '/' on US QWERTY
+                    break;
+            }
+#else
+            configKeyChatCommand[0] = 0x0035; // '/' default on non-Windows
+#endif
+        }
         configfile_save(filename);
         return;
     }
@@ -781,7 +811,25 @@ NEXT_OPTION:
     }
 
     fs_close(file);
+    // If user has no chat command bind yet, set a default based on layout
+    if (configKeyChatCommand[0] == VK_INVALID && configKeyChatCommand[1] == VK_INVALID && configKeyChatCommand[2] == VK_INVALID) {
+#ifdef _WIN32
+        HKL hkl = GetKeyboardLayout(0);
+        LANGID lang = LOWORD(hkl);
+        switch (PRIMARYLANGID(lang)) {
+            case LANG_GERMAN:
+                configKeyChatCommand[0] = 0x002B; // '#'
+                break;
+            default:
+                configKeyChatCommand[0] = 0x0035; // '/'
+                break;
+        }
+#else
+        configKeyChatCommand[0] = 0x0035;
+#endif
+    }
 
+    if (configFramerateMode < 0 || configFramerateMode > RRM_MAX) { configFramerateMode = 0; }
     if (configFrameLimit < 30)   { configFrameLimit = 30; }
     if (configFrameLimit > 3000) { configFrameLimit = 3000; }
 

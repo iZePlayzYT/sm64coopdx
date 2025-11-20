@@ -223,7 +223,7 @@ Gfx *gfx_get_display_list(Gfx *cmd) {
 Vtx *gfx_get_vertex_buffer(Gfx *cmd) {
     if (!cmd) { return NULL; }
     u32 op = GFX_OP(cmd);
-    if (op != G_VTX) { return NULL; }
+    if (op != G_VTX && op != G_VTX_EXT) { return NULL; }
     if (cmd->words.w1 == 0) { return NULL; }
 
     return (Vtx *) cmd->words.w1;
@@ -232,19 +232,25 @@ Vtx *gfx_get_vertex_buffer(Gfx *cmd) {
 u16 gfx_get_vertex_count(Gfx *cmd) {
     if (!cmd) { return 0; }
     u32 op = GFX_OP(cmd);
-    if (op != G_VTX) { return 0; }
+    if (op != G_VTX && op != G_VTX_EXT) { return 0; }
     if (cmd->words.w1 == 0) { return 0; }
 
     return C0(cmd, 12, 8);
 }
 
-u8 *gfx_get_texture(Gfx *cmd) {
+Texture *gfx_get_texture(Gfx *cmd) {
     if (!cmd) { return 0; }
     u32 op = GFX_OP(cmd);
     if (op != G_SETCIMG && op != G_SETZIMG && op != G_SETTIMG) { return 0; }
     if (cmd->words.w1 == 0) { return 0; }
 
-    return (u8 *) cmd->words.w1;
+    return (Texture *) cmd->words.w1;
+}
+
+const char *gfx_get_name(Gfx *gfx) {
+    if (!gfx) { return NULL; }
+
+    return dynos_gfx_get_name(gfx);
 }
 
 u32 gfx_get_length(Gfx *gfx) {
@@ -347,6 +353,12 @@ void gfx_delete(Gfx *gfx) {
 
 void gfx_delete_all() {
     dynos_gfx_delete_all();
+}
+
+const char *vtx_get_name(Vtx *vtx) {
+    if (!vtx) { return NULL; }
+
+    return dynos_vtx_get_name(vtx);
 }
 
 u32 vtx_get_count(Vtx *vtx) {

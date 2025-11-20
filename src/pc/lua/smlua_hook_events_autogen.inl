@@ -1082,13 +1082,13 @@ bool smlua_call_event_hooks_HOOK_ON_DIALOG(s32 dialogID, bool *openDialogBox, co
         hookResult = true;
 
         // return openDialogBox
-        if (lua_type(L, -1) == LUA_TBOOLEAN) {
-            *openDialogBox = smlua_to_boolean(L, -1);
+        if (lua_type(L, -2) == LUA_TBOOLEAN) {
+            *openDialogBox = smlua_to_boolean(L, -2);
         }
 
         // return dialogTextOverride
-        if (lua_type(L, -2) == LUA_TSTRING) {
-            *dialogTextOverride = smlua_to_string(L, -2);
+        if (lua_type(L, -1) == LUA_TSTRING) {
+            *dialogTextOverride = smlua_to_string(L, -1);
         }
 
         lua_settop(L, prevTop);
@@ -1827,6 +1827,34 @@ bool smlua_call_event_hooks_HOOK_ON_CLEAR_AREAS() {
         // call the callback
         if (0 != smlua_call_hook(L, 0, 0, 0, hook->mod[i], hook->modFile[i])) {
             LOG_LUA("Failed to call the callback for hook %s", sLuaHookedEventTypeName[HOOK_ON_CLEAR_AREAS]);
+            continue;
+        }
+        hookResult = true;
+
+        lua_settop(L, prevTop);
+    }
+    return hookResult;
+}
+
+bool smlua_call_event_hooks_HOOK_ON_PACKET_BYTESTRING_RECEIVE(s32 modIndex, s32 valueIndex) {
+    lua_State *L = gLuaState;
+    if (L == NULL) { return false; }
+    bool hookResult = false;
+
+    struct LuaHookedEvent *hook = &sHookedEvents[HOOK_ON_PACKET_BYTESTRING_RECEIVE];
+    for (int i = 0; i < hook->count; i++) {
+        if (hook->mod[i]->index != modIndex) { continue; }
+        s32 prevTop = lua_gettop(L);
+
+        // push the callback onto the stack
+        lua_rawgeti(L, LUA_REGISTRYINDEX, hook->reference[i]);
+
+        // push valueIndex
+        lua_pushvalue(L, valueIndex);
+
+        // call the callback
+        if (0 != smlua_call_hook(L, 1, 0, 0, hook->mod[i], hook->modFile[i])) {
+            LOG_LUA("Failed to call the callback for hook %s", sLuaHookedEventTypeName[HOOK_ON_PACKET_BYTESTRING_RECEIVE]);
             continue;
         }
         hookResult = true;
