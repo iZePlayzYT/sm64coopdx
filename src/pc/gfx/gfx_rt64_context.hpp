@@ -227,7 +227,7 @@ struct RT64Context {
     std::map<std::string, RecordedMod *> pendingGeoLayoutMods;
     std::unordered_map<void *, void *> graphNodeGeoLayouts;
     std::unordered_set<void *> graphNodeRootsNamed;
-    std::unordered_set<void *> graphNodeModsSynced;
+    std::unordered_map<void *, void *> graphNodeModsSyncedGeoLayout;
     std::unordered_map<u64, std::string> texNameMap;
     std::map<std::string, u64> nameTexMap;
     std::unordered_map<u64, RecordedMod *> texMods;

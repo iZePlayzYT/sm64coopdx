@@ -70,7 +70,6 @@ void register_scene_graph_node(struct GraphNode *graphNode) {
         if (gCurGraphNodeIndex == 0) {
             if (gCurRootGraphNode == NULL) {
                 gCurRootGraphNode = graphNode;
-                gfx_register_layout_graph_node(gCurGeoLayout, graphNode);
             }
         } else {
             if (gCurGraphNodeList[gCurGraphNodeIndex - 1]->type == GRAPH_NODE_TYPE_OBJECT_PARENT) {

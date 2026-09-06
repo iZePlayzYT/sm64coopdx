@@ -478,9 +478,11 @@ static void gfx_rt64_render_thread_draw_frame(GameFrame *curFrame, GameFrame *pr
     for (auto &gpuDlPair : RT64.gpuDisplayLists) { gpuDlPair.second.drawCount = 0; }
 
     // Queue up all display lists first.
+    RT64.lib.BeginMeshBatch(RT64.device);
     for (auto &dlPair : curFrame->displayLists) {
         gfx_rt64_render_thread_draw_display_list(dlPair.first, curFrame);
     }
+    RT64.lib.EndMeshBatch(RT64.device);
 
     // Clean up any unused instances or meshes from the GPU display lists.
     auto gpuDlIt = RT64.gpuDisplayLists.begin();

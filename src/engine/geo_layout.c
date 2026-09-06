@@ -7,6 +7,7 @@
 #include "graph_node.h"
 #include "geo_commands.h"
 #include "pc/debuglog.h"
+#include "pc/gfx/gfx_pc.h"
 
 #define GEO_LAYOUT_STACK_SIZE 16
 #define GRAPH_NODE_LIST_SIZE 32
@@ -57,7 +58,6 @@ static GeoLayoutCommandProc GeoLayoutJumpTable[] = {
 struct GraphNode gObjParentGraphNode;
 struct DynamicPool *gGraphNodePool = NULL;
 struct GraphNode *gCurRootGraphNode = NULL;
-void *gCurGeoLayout = NULL;
 
 /* The gGeoViews array is a mysterious one. Some background:
  *
@@ -995,6 +995,7 @@ struct GraphNode *process_geo_layout(struct DynamicPool *pool, void *geoLayout) 
 
     if (gCurRootGraphNode) {
         gCurRootGraphNode->georef = (const void *) geoLayout;
+        gfx_register_layout_graph_node(geoLayout, gCurRootGraphNode);
     }
     return gCurRootGraphNode;
 }

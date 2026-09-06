@@ -409,8 +409,6 @@ extern s16 gCurGraphNodeIndex;
 
 extern u32 gCurGraphNodeUID;
 
-extern void *gCurGeoLayout;
-
 void init_scene_graph_node_links(struct GraphNode *graphNode, s32 type);
 
 struct GraphNodeRoot *init_graph_node_root(struct DynamicPool *pool, struct GraphNodeRoot *graphNode,

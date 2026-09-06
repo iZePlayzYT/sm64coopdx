@@ -1119,7 +1119,7 @@ void gfx_rt64_load_mod_configs(void) {
 }
 
 void gfx_rt64_invalidate_mod_configs(void) {
-    RT64.graphNodeModsSynced.clear();
+    RT64.graphNodeModsSyncedGeoLayout.clear();
     RT64.materialNameHashes.clear();
     RT64.materialNameHashDl = nullptr;
     RT64.materialNameHashCached = 0;
@@ -1640,7 +1640,7 @@ static void gfx_rt64_bind_layout_graph_node(void *geoLayout, void *graphNode) {
         RT64.graphNodeMods.erase(graphNode);
         RT64.graphNodeGeoLayouts.erase(graphNode);
         RT64.graphNodeRootsNamed.erase(graphNode);
-        RT64.graphNodeModsSynced.erase(graphNode);
+        RT64.graphNodeModsSyncedGeoLayout.erase(graphNode);
     }
 
     if ((geoLayout != nullptr) && (graphNode != nullptr)) {
@@ -1693,9 +1693,13 @@ void *gfx_rt64_build_graph_node_mod(void *graphNode, f32 modelviewMatrix[4][4], 
         RT64.tickLights.clear();
     }
 
-    const bool modIsStale = RT64.graphNodeModsSynced.insert(graphNode).second;
+    auto geoLayoutIt = RT64.graphNodeGeoLayouts.find(graphNode);
+    void *curGeoLayout = (geoLayoutIt != RT64.graphNodeGeoLayouts.end()) ? geoLayoutIt->second : nullptr;
+    auto syncedIt = RT64.graphNodeModsSyncedGeoLayout.find(graphNode);
+    const bool modIsStale = (syncedIt == RT64.graphNodeModsSyncedGeoLayout.end()) || (syncedIt->second != curGeoLayout);
     if (modIsStale || RT64.renderInspectorActive) {
         gfx_rt64_refresh_graph_node_mod(graphNode);
+        RT64.graphNodeModsSyncedGeoLayout[graphNode] = curGeoLayout;
     }
 
     if (RT64.renderInspectorActive) {
@@ -1749,16 +1753,18 @@ void gfx_rt64_inherit_graph_node_mod(void *originalGraphNode, void *replacementG
         return;
     }
 
-    auto modIt = RT64.graphNodeMods.find(originalGraphNode);
-    if (modIt != RT64.graphNodeMods.end()) {
-        std::shared_ptr<RecordedMod> mod = modIt->second;
-        RT64.graphNodeMods[replacementGraphNode] = mod;
+    if (RT64.graphNodeMods.find(replacementGraphNode) == RT64.graphNodeMods.end()) {
+        auto modIt = RT64.graphNodeMods.find(originalGraphNode);
+        if (modIt != RT64.graphNodeMods.end()) {
+            RT64.graphNodeMods[replacementGraphNode] = modIt->second;
+        }
     }
 
-    auto geoIt = RT64.graphNodeGeoLayouts.find(originalGraphNode);
-    if (geoIt != RT64.graphNodeGeoLayouts.end()) {
-        void *geoLayout = geoIt->second;
-        RT64.graphNodeGeoLayouts[replacementGraphNode] = geoLayout;
+    if (RT64.graphNodeGeoLayouts.find(replacementGraphNode) == RT64.graphNodeGeoLayouts.end()) {
+        auto geoIt = RT64.graphNodeGeoLayouts.find(originalGraphNode);
+        if (geoIt != RT64.graphNodeGeoLayouts.end()) {
+            RT64.graphNodeGeoLayouts[replacementGraphNode] = geoIt->second;
+        }
     }
 }
 
