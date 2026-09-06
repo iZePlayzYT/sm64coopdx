@@ -224,6 +224,15 @@
 --- @field public areaCenY number
 --- @field public mtx Mat4
 
+--- @class CameraFOVStatus
+--- @field public fovFunc integer
+--- @field public fov number
+--- @field public fovOffset number
+--- @field public shakeAmplitude number
+--- @field public shakePhase integer
+--- @field public shakeSpeed integer
+--- @field public decay integer
+
 --- @class ChainSegment
 --- @field public posX number
 --- @field public posY number
@@ -550,6 +559,11 @@
 --- @field public echoLevel3 integer
 --- @field public modIndex integer
 --- @field public next CustomLevelInfo
+
+--- @class CustomWarpNode
+--- @field public node ObjectWarpNode
+--- @field public spawnInfo SpawnInfo
+--- @field public marioSpawnType MarioSpawnType
 
 --- @class DateTime
 --- @field public year integer
@@ -930,6 +944,8 @@
 --- @field public near integer
 --- @field public far integer
 --- @field public prevFov number
+--- @field public prevNear number
+--- @field public prevFar number
 --- @field public prevTimestamp number
 
 --- @class GraphNodeRoot
