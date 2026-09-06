@@ -137,6 +137,7 @@ void dynos_actor_override_report(struct GraphNode *originalNode, struct GraphNod
     DynOS_Actor_Override_Report(originalNode, replacementNode);
 }
 
+bool dynos_add_actor_custom(s32 modIndex, s32 modFileIndex, const char *filePath, const char* geoName) {
     return DynOS_Actor_AddCustom(modIndex, modFileIndex, filePath, geoName);
 }
 

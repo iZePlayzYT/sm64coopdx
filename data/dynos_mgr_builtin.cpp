@@ -408,6 +408,20 @@ const char* DynOS_Builtin_Actor_GetFromData(const GeoLayout* aData) {
     MGR_FIND_NAME(sDynosBuiltinActors);
 }
 
+const GeoLayout* DynOS_Builtin_Actor_GetFromIndex(s32 aIndex) {
+    if (aIndex < 0 || aIndex >= DynOS_Builtin_Actor_GetCount()) { return NULL; }
+    return (const GeoLayout*) sDynosBuiltinActors[aIndex * 2 + 1];
+}
+
+const char* DynOS_Builtin_Actor_GetNameFromIndex(s32 aIndex) {
+    if (aIndex < 0 || aIndex >= DynOS_Builtin_Actor_GetCount()) { return NULL; }
+    return (const char*) sDynosBuiltinActors[aIndex * 2 + 0];
+}
+
+s32 DynOS_Builtin_Actor_GetCount(void) {
+    return sizeof(sDynosBuiltinActors) / (2 * sizeof(sDynosBuiltinActors[0]));
+}
+
   //////////////////
  // Level Macros //
 //////////////////

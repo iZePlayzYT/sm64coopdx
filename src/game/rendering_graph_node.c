@@ -337,7 +337,7 @@ void patch_mtx_interpolated(f32 delta) {
         guPerspective(sPerspectiveMtx, &perspNorm, fov, sPerspectiveAspect, near, far, 1.0f);
         gSPMatrix(sPerspectivePos, VIRTUAL_TO_PHYSICAL(sPerspectiveNode), G_MTX_PROJECTION | G_MTX_LOAD | G_MTX_NOPUSH);
 
-        gfx_set_camera_perspective(fovInterpolated, near, far, gGlobalTimer != gLakituState.skipCameraInterpolationTimestamp);
+        gfx_set_camera_perspective(fov, near, far, gGlobalTimer != gLakituState.skipCameraInterpolationTimestamp);
     }
 
     if (sViewportClipPos != NULL) {

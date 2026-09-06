@@ -87,17 +87,6 @@ bool DynOS_Actor_AddCustom(s32 aModIndex, s32 aModFileIndex, const SysPath &aFil
     return true;
 }
 
-// Reverse of the DynosCustomActors()
-const char *DynOS_Actor_GetNameFromLayout(const void *aGeoLayout) {
-    if (aGeoLayout == NULL) { return NULL; }
-
-    for (auto& pair : DynosCustomActors()) {
-        if ((const void *) pair.second == aGeoLayout) { return pair.first.c_str(); }
-    }
-
-    return NULL;
-}
-
 const void *DynOS_Actor_GetLayoutFromName(const char *aActorName) {
     if (aActorName == NULL) { return NULL; }
 

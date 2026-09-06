@@ -83,7 +83,7 @@ RT64_LUA_ASSERT_FIELD(struct Rt64AreaLighting, AreaLighting, lightCount, lightCo
 
 extern "C" HWND gfx_window_dxgi_get_h_wnd(void);
 
-extern "C" const char *dynos_actor_get_custom_name(const void *geoLayout);
+extern "C" const char *dynos_geolayout_get_name(const void *geoLayout);
 
 extern "C" {
 #include "engine/math_util.h"
@@ -1655,7 +1655,7 @@ static void gfx_rt64_bind_layout_graph_node(void *geoLayout, void *graphNode) {
                     geoName = nameIt->second;
                 }
             } else {
-                const char *customName = dynos_actor_get_custom_name(geoLayout);
+                const char *customName = dynos_geolayout_get_name(geoLayout);
                 if (customName != nullptr) { geoName = customName; }
             }
 
@@ -1790,7 +1790,7 @@ static void *gfx_rt64_resolve_named_geo_layout(void *graphNodeRoot, void *geoLay
     }
 
     if (geoLayout != nullptr) {
-        const char *customName = dynos_actor_get_custom_name(geoLayout);
+        const char *customName = dynos_geolayout_get_name(geoLayout);
         if (customName != nullptr) {
             gfx_rt64_bind_named_geo_layout(customName, geoLayout);
             return geoLayout;
