@@ -1,0 +1,518 @@
+diff --git a/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.cpp b/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.cpp
+index 560142d..e4ee3ee 100644
+--- a/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.cpp
++++ b/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.cpp
+@@ -44,6 +44,23 @@ compiling in debug mode.
+ #include "dxcapi.h"
+ #include <unordered_set>
+ #include <stdexcept>
++#include <windows.h>
++
++// Isolated from C++ unwind so MSVC can use SEH around the driver call.
++// AMD's DXIL compiler (amdxc64.dll) has historically crashed here on some drivers.
++static HRESULT CreateStateObjectSEH(ID3D12Device8 *device, const D3D12_STATE_OBJECT_DESC *desc, ID3D12StateObject **outObject) {
++  if (outObject == nullptr) {
++    return E_POINTER;
++  }
++
++  *outObject = nullptr;
++  __try {
++    return device->CreateStateObject(desc, IID_PPV_ARGS(outObject));
++  }
++  __except (EXCEPTION_EXECUTE_HANDLER) {
++    return HRESULT_FROM_WIN32(GetExceptionCode());
++  }
++}
+ 
+ namespace nv_helpers_dx12
+ {
+@@ -54,9 +71,16 @@ namespace nv_helpers_dx12
+ RayTracingPipelineGenerator::RayTracingPipelineGenerator(ID3D12Device8* device)
+     : m_device(device)
+ {
+-  // The pipeline creation requires having at least one empty global and local root signatures, so
+-  // we systematically create both, as this does not incur any overhead
+-  CreateDummyRootSignatures();
++}
++
++void RayTracingPipelineGenerator::SetGlobalRootSignature(ID3D12RootSignature* rootSignature)
++{
++  m_dummyGlobalRootSignature = rootSignature;
++}
++
++ID3D12RootSignature* RayTracingPipelineGenerator::GetGlobalRootSignature() const
++{
++  return m_dummyGlobalRootSignature;
+ }
+ 
+ //--------------------------------------------------------------------------------------------------
+@@ -137,6 +161,8 @@ void RayTracingPipelineGenerator::SetMaxRecursionDepth(UINT maxDepth)
+ // Compiles the raytracing state object
+ ID3D12StateObject* RayTracingPipelineGenerator::Generate()
+ {
++  CreateDummyRootSignatures();
++
+   // The pipeline is made of a set of sub-objects, representing the DXIL libraries, hit group
+   // declarations, root signature associations, plus some configuration objects
+   UINT64 subobjectCount =
+@@ -272,11 +298,12 @@ ID3D12StateObject* RayTracingPipelineGenerator::Generate()
+ 
+   ID3D12StateObject* rtStateObject = nullptr;
+ 
+-  // Create the state object
+-  HRESULT hr = m_device->CreateStateObject(&pipelineDesc, IID_PPV_ARGS(&rtStateObject));
++  // Create the state object. Wrap the driver call so an AMD compiler crash becomes a
++  // recoverable error instead of taking down the process.
++  HRESULT hr = CreateStateObjectSEH(m_device, &pipelineDesc, &rtStateObject);
+   if (FAILED(hr))
+   {
+-    throw std::logic_error("Could not create the raytracing state object");
++    throw std::runtime_error("Could not create the raytracing state object");
+   }
+ 
+   return rtStateObject;
+@@ -288,11 +315,9 @@ ID3D12StateObject* RayTracingPipelineGenerator::Generate()
+ // we systematically create both
+ void RayTracingPipelineGenerator::CreateDummyRootSignatures()
+ {
+-  // Creation of the global root signature
+   D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+   rootDesc.NumParameters = 0;
+   rootDesc.pParameters = nullptr;
+-  // A global root signature is the default, hence this flag
+   rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
+ 
+   HRESULT hr = 0;
+@@ -300,21 +325,26 @@ void RayTracingPipelineGenerator::CreateDummyRootSignatures()
+   ID3DBlob* serializedRootSignature;
+   ID3DBlob* error;
+ 
+-  // Create the empty global root signature
+-  hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+-                                   &serializedRootSignature, &error);
+-  if (FAILED(hr))
+-  {
+-    throw std::logic_error("Could not serialize the global root signature");
++  if (m_dummyGlobalRootSignature == nullptr) {
++    hr = D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1,
++                                     &serializedRootSignature, &error);
++    if (FAILED(hr))
++    {
++      throw std::logic_error("Could not serialize the global root signature");
++    }
++    hr = m_device->CreateRootSignature(0, serializedRootSignature->GetBufferPointer(),
++                                       serializedRootSignature->GetBufferSize(),
++                                       IID_PPV_ARGS(&m_dummyGlobalRootSignature));
++
++    serializedRootSignature->Release();
++    if (FAILED(hr))
++    {
++      throw std::logic_error("Could not create the global root signature");
++    }
+   }
+-  hr = m_device->CreateRootSignature(0, serializedRootSignature->GetBufferPointer(),
+-                                     serializedRootSignature->GetBufferSize(),
+-                                     IID_PPV_ARGS(&m_dummyGlobalRootSignature));
+ 
+-  serializedRootSignature->Release();
+-  if (FAILED(hr))
+-  {
+-    throw std::logic_error("Could not create the global root signature");
++  if (m_dummyLocalRootSignature != nullptr) {
++    return;
+   }
+ 
+   // Create the local root signature, reusing the same descriptor but altering the creation flag
+diff --git a/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.h b/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.h
+index b16125a..794133e 100644
+--- a/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.h
++++ b/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.h
+@@ -122,6 +122,12 @@ public:
+   /// Compiles the raytracing state object
+   ID3D12StateObject* Generate();
+ 
++  /// Optional: bind the same empty global root signature that DispatchRays will use.
++  /// AMD and vkd3d-proton require SetComputeRootSignature with a signature compatible
++  /// with the RTPSO global root signature. Using one shared object avoids driver mismatches.
++  void SetGlobalRootSignature(ID3D12RootSignature* rootSignature);
++  ID3D12RootSignature* GetGlobalRootSignature() const;
++
+ private:
+   /// Storage for DXIL libraries and their exported symbols
+   struct Library
+@@ -188,8 +194,8 @@ private:
+   UINT m_maxRecursionDepth = 1;
+ 
+   ID3D12Device8* m_device;
+-  ID3D12RootSignature* m_dummyLocalRootSignature;
+-  ID3D12RootSignature* m_dummyGlobalRootSignature;
++  ID3D12RootSignature* m_dummyLocalRootSignature = nullptr;
++  ID3D12RootSignature* m_dummyGlobalRootSignature = nullptr;
+ 
+   
+ };
+diff --git a/src/rt64lib/private/rt64_common.h b/src/rt64lib/private/rt64_common.h
+index ccb0b51..53754c7 100644
+--- a/src/rt64lib/private/rt64_common.h
++++ b/src/rt64lib/private/rt64_common.h
+@@ -16,6 +16,7 @@
+ 
+ #include <dxgi1_4.h>
+ #include <dxgi1_5.h>
++#include <dxgi1_6.h>
+ #include <d3d12.h>
+ 
+ #include "D3D12MemoryAllocator/D3D12MemAlloc.h"
+@@ -370,12 +371,12 @@ namespace RT64 {
+ #define D3D12_CHECK( call )                                                         \
+     do                                                                              \
+     {                                                                               \
+-        HRESULT hr = call;                                                          \
+-        if (FAILED(hr))														        \
++        HRESULT d3d12CallResult = call;                                             \
++        if (FAILED(d3d12CallResult))                                                \
+         {																	        \
+ 			char errorMessage[512];													\
+ 			snprintf(errorMessage, sizeof(errorMessage), "D3D12 call " #call " "	\
+-				"failed with error code %X.", hr);									\
++				"failed with error code %X.", d3d12CallResult);						\
+ 																					\
+             throw std::runtime_error(errorMessage);                                 \
+         }                                                                           \
+@@ -382,7 +383,7 @@ namespace RT64 {
+     } while( 0 )
+ 
+ #define RT64_CATCH_EXCEPTION()							\
+-	catch (const std::runtime_error &e) {				\
++	catch (const std::exception &e) {				\
+ 		RT64::GlobalLastError = std::string(e.what());	\
+ 		fprintf(stderr, "%s\n", e.what());				\
+ 	}
+diff --git a/src/rt64lib/private/rt64_device.cpp b/src/rt64lib/private/rt64_device.cpp
+index 8c7e9ff..f2cc783 100644
+--- a/src/rt64lib/private/rt64_device.cpp
++++ b/src/rt64lib/private/rt64_device.cpp
+@@ -64,6 +64,7 @@ RT64::Device::Device(HWND hwnd) {
+ 	this->hwnd = hwnd;
+ 	d3dAllocator = nullptr;
+ 	d3dRtStateObject = nullptr;
++	d3dRtGlobalRootSignature = nullptr;
+ 	lastCommandQueueBarrierActive = false;
+ 	lastCopyQueueBarrierActive = false;
+ 	meshBatchActive = false;
+@@ -177,6 +178,7 @@ RT64::Device::~Device() {
+ 
+ 	ReleaseCom(&d3dRtStateObjectProps);
+ 	ReleaseCom(&d3dRtStateObject);
++	ReleaseCom(&d3dRtGlobalRootSignature);
+ 	ReleaseCom(&d3dRayGenSignature);
+ 	ReleaseCom(&d3dUberSurfaceHitLibrary);
+ 	ReleaseCom(&d3dUberShadowHitLibrary);
+@@ -254,70 +256,86 @@ void RT64::Device::createDXGIFactory() {
+ void RT64::Device::createRaytracingDevice() {
+ 	d3dAdapter = nullptr;
+ 	d3dDevice = nullptr;
++#ifndef RT64_MINIMAL
++	disableMipmaps = false;
++#endif
+ 
+ 	std::stringstream ss;
+-	{
+-		// Attempt to create D3D12 devices and pick the first one that actually supports raytracing.
+-		// This implementation should detect more accurately cases where multiple D3D12 adapters are available
+-		// but they're not raytracing capable, yet there's more devices on the system that fit the criteria.
++	auto tryAdapter = [this, &ss](IDXGIAdapter1 *adapter, UINT adapterIndex) -> bool {
+ 		DXGI_ADAPTER_DESC1 desc;
+-		for (UINT adapterIndex = 0; dxgiFactory->EnumAdapters1(adapterIndex, &d3dAdapter) != DXGI_ERROR_NOT_FOUND; ++adapterIndex) {
+-			d3dAdapter->GetDesc1(&desc);
++		adapter->GetDesc1(&desc);
+ 
+-			// Ignore software adapters.
+-			if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
+-				d3dAdapter->Release();
+-				d3dAdapter = nullptr;
+-				continue;
+-			}
++		if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
++			return false;
++		}
+ 
+-			auto handleAdapterError = [this, &ss, &desc, &adapterIndex](const std::string &errorSuffix) {
+-				ss << "Adapter " << win32::Utf16ToUtf8(desc.Description) << " (#" << adapterIndex << "): " << errorSuffix << std::endl;
+-				if (d3dDevice != nullptr) {
+-					d3dDevice->Release();
+-					d3dDevice = nullptr;
+-				}
+-
+-				if (d3dAdapter != nullptr) {
+-					d3dAdapter->Release();
+-					d3dAdapter = nullptr;
+-				}
+-			};
+-
+-			// Try creating the device for this adapter.
+-			HRESULT deviceResult = D3D12CreateDevice(d3dAdapter, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&d3dDevice));
+-			if (SUCCEEDED(deviceResult)) {
+-				D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5 = {};
+-				HRESULT checkResult = d3dDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5));
+-				if (SUCCEEDED(checkResult)) {
+-					if (options5.RaytracingTier < D3D12_RAYTRACING_TIER_1_0) {
+-						handleAdapterError("No raytracing support.");
+-					}
+-					else {
+-						break;
+-					}
+-				}
+-				else {
+-					handleAdapterError("No feature checking at the required level.");
+-					ss << "D3D12Device->CheckFeatureSupport error code: " << std::hex << checkResult << std::endl;
+-				}
+-			}
+-			else {
+-				handleAdapterError("No D3D12.1 feature level support.");
+-				ss << "D3D12CreateDevice error code: " << std::hex << deviceResult << std::endl;
++		auto handleAdapterError = [this, &ss, &desc, adapterIndex](const std::string &errorSuffix) {
++			ss << "Adapter " << win32::Utf16ToUtf8(desc.Description) << " (#" << adapterIndex << "): " << errorSuffix << std::endl;
++			if (d3dDevice != nullptr) {
++				d3dDevice->Release();
++				d3dDevice = nullptr;
+ 			}
++		};
++
++		HRESULT deviceResult = D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&d3dDevice));
++		if (FAILED(deviceResult)) {
++			handleAdapterError("No D3D12.1 feature level support.");
++			ss << "D3D12CreateDevice error code: " << std::hex << deviceResult << std::endl;
++			return false;
++		}
++
++		D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5 = {};
++		HRESULT checkResult = d3dDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5));
++		if (FAILED(checkResult)) {
++			handleAdapterError("No feature checking at the required level.");
++			ss << "D3D12Device->CheckFeatureSupport error code: " << std::hex << checkResult << std::endl;
++			return false;
++		}
++
++		if (options5.RaytracingTier < D3D12_RAYTRACING_TIER_1_0) {
++			handleAdapterError("No raytracing support.");
++			return false;
++		}
++
++		d3dAdapter = adapter;
++		d3dAdapter->AddRef();
++
++#ifndef RT64_MINIMAL
++		// AMD mipmap generation is corrupted on this backend (https://github.com/DarioSamo/RT64/issues/54).
++		if (desc.VendorId == 0x1002) {
++			disableMipmaps = true;
++		}
++#endif
+ 
+-#		ifndef RT64_MINIMAL
+-			// FIXME: Work around AMD's mipmap generation being corrupted until a solution is found.
+-			// Refer to https://github.com/DarioSamo/RT64/issues/54
+-			if (wcsstr(desc.Description, L"AMD") != nullptr) {
+-				disableMipmaps = true;
++		RT64_LOG_PRINTF("Selected adapter: %s", win32::Utf16ToUtf8(desc.Description).c_str());
++		return true;
++	};
++
++	IDXGIFactory6 *factory6 = nullptr;
++	if (SUCCEEDED(dxgiFactory->QueryInterface(IID_PPV_ARGS(&factory6)))) {
++		for (UINT adapterIndex = 0; factory6->EnumAdapterByGpuPreference(adapterIndex, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&d3dAdapter)) != DXGI_ERROR_NOT_FOUND; ++adapterIndex) {
++			IDXGIAdapter1 *candidate = d3dAdapter;
++			d3dAdapter = nullptr;
++			const bool selected = tryAdapter(candidate, adapterIndex);
++			candidate->Release();
++			if (selected) {
++				break;
++			}
++		}
++		factory6->Release();
++	}
++	else {
++		for (UINT adapterIndex = 0; dxgiFactory->EnumAdapters1(adapterIndex, &d3dAdapter) != DXGI_ERROR_NOT_FOUND; ++adapterIndex) {
++			IDXGIAdapter1 *candidate = d3dAdapter;
++			d3dAdapter = nullptr;
++			const bool selected = tryAdapter(candidate, adapterIndex);
++			candidate->Release();
++			if (selected) {
++				break;
+ 			}
+-#		endif
+ 		}
+ 	}
+ 
+-	// Only throw an exception if no device was detected.
+ 	if (d3dDevice == nullptr) {
+ 		throw std::runtime_error("Unable to detect a device capable of raytracing.\n" + ss.str());
+ 	}
+@@ -429,6 +447,10 @@ ID3D12StateObjectProperties *RT64::Device::getD3D12RtStateObjectProperties() con
+ 	return d3dRtStateObjectProps;
+ }
+ 
++ID3D12RootSignature *RT64::Device::getD3D12RtGlobalRootSignature() const {
++	return d3dRtGlobalRootSignature;
++}
++
+ ID3D12Resource *RT64::Device::getD3D12RenderTarget() const {
+ 	return d3dRenderTargets[d3dFrameIndex];
+ }
+@@ -1038,6 +1060,11 @@ void RT64::Device::createRaytracingPipeline() {
+ 
+ 	nv_helpers_dx12::RayTracingPipelineGenerator pipeline(d3dDevice);
+ 
++	if (d3dRtGlobalRootSignature == nullptr) {
++		d3dRtGlobalRootSignature = createEmptyGlobalRootSignature();
++	}
++	pipeline.SetGlobalRootSignature(d3dRtGlobalRootSignature);
++
+ 	RT64_LOG_PRINTF("Loading shader libraries");
+ 
+ 	// Shader libraries.
+@@ -1209,6 +1236,28 @@ void RT64::Device::createDxcCompiler() {
+ 	RT64_LOG_PRINTF("Compiler creation finished");
+ }
+ 
++ID3D12RootSignature *RT64::Device::createEmptyGlobalRootSignature() {
++	D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
++	rootDesc.NumParameters = 0;
++	rootDesc.pParameters = nullptr;
++	rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
++
++	ID3DBlob *serializedRootSignature = nullptr;
++	ID3DBlob *error = nullptr;
++	D3D12_CHECK(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &serializedRootSignature, &error));
++
++	ID3D12RootSignature *rootSignature = nullptr;
++	HRESULT createResult = d3dDevice->CreateRootSignature(0, serializedRootSignature->GetBufferPointer(), serializedRootSignature->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
++	if (serializedRootSignature != nullptr) {
++		serializedRootSignature->Release();
++	}
++	if (error != nullptr) {
++		error->Release();
++	}
++	D3D12_CHECK(createResult);
++	return rootSignature;
++}
++
+ ID3D12RootSignature *RT64::Device::createRayGenSignature() {
+ 	nv_helpers_dx12::RootSignatureGenerator rsc;
+ 
+diff --git a/src/rt64lib/private/rt64_device.h b/src/rt64lib/private/rt64_device.h
+index 77624af..ca30556 100644
+--- a/src/rt64lib/private/rt64_device.h
++++ b/src/rt64lib/private/rt64_device.h
+@@ -99,6 +99,7 @@ namespace RT64 {
+ 		ID3D12RootSignature *im3dRootSignature;
+ 		ID3D12StateObject *d3dRtStateObject;
+ 		ID3D12StateObjectProperties *d3dRtStateObjectProps;
++		ID3D12RootSignature *d3dRtGlobalRootSignature;
+ 
+ 		IDxcBlob *d3dUberSurfaceHitLibrary;
+ 		IDxcBlob *d3dUberShadowHitLibrary;
+@@ -147,6 +148,7 @@ namespace RT64 {
+ 		void createRaytracingPipeline();
+ 		void fallBackFromCustomShaders();
+ 		void createDxcCompiler();
++		ID3D12RootSignature *createEmptyGlobalRootSignature();
+ 		ID3D12RootSignature *createRayGenSignature();
+ 		ID3D12RootSignature *createUberHitSignature(bool hitBuffers);
+ 		ID3D12RootSignature *createCustomHitSignature(bool hitBuffers);
+@@ -172,6 +174,7 @@ namespace RT64 {
+ 		ID3D12GraphicsCommandList4 *getD3D12CommandList() const;
+ 		ID3D12StateObject *getD3D12RtStateObject() const;
+ 		ID3D12StateObjectProperties *getD3D12RtStateObjectProperties() const;
++		ID3D12RootSignature *getD3D12RtGlobalRootSignature() const;
+ 		ID3D12Resource *getD3D12RenderTarget() const;
+ 		CD3DX12_CPU_DESCRIPTOR_HANDLE getD3D12RTV() const;
+ 		ID3D12RootSignature *getComposeRootSignature() const;
+diff --git a/src/rt64lib/private/rt64_nrd.cpp b/src/rt64lib/private/rt64_nrd.cpp
+index 6a35a46..f583ef6 100644
+--- a/src/rt64lib/private/rt64_nrd.cpp
++++ b/src/rt64lib/private/rt64_nrd.cpp
+@@ -7,6 +7,8 @@
+ #include "rt64_nrd.h"
+ 
+ #include <algorithm>
++#include <cstdio>
++#include <stdexcept>
+ #include <vector>
+ 
+ #include "NRD.h"
+@@ -14,6 +16,22 @@
+ #include "rt64_common.h"
+ #include "rt64_device.h"
+ 
++#include <windows.h>
++
++static HRESULT CreateComputePipelineStateSEH(ID3D12Device *device, const D3D12_COMPUTE_PIPELINE_STATE_DESC *desc, ID3D12PipelineState **outPso) {
++	if (outPso == nullptr) {
++		return E_POINTER;
++	}
++
++	*outPso = nullptr;
++	__try {
++		return device->CreateComputePipelineState(desc, IID_PPV_ARGS(outPso));
++	}
++	__except (EXCEPTION_EXECUTE_HANDLER) {
++		return E_FAIL;
++	}
++}
++
+ static const float kWorldUnitsPerMeter = 100.0f;
+ static const float kDenoisingRange = 2.0e5f;
+ static const float kDiffuseMaxBlurRadius = 10.0f;
+@@ -196,7 +214,10 @@ private:
+ 			psoDesc.CS.BytecodeLength = pipelineDesc.computeShaderDXIL.size;
+ 
+ 			ID3D12PipelineState *pso = nullptr;
+-			D3D12_CHECK(device->getD3D12Device()->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&pso)));
++			HRESULT psoResult = CreateComputePipelineStateSEH(device->getD3D12Device(), &psoDesc, &pso);
++			if (FAILED(psoResult)) {
++				throw std::runtime_error("NRD CreateComputePipelineState failed. The denoiser is unavailable on this GPU/driver.");
++			}
+ 			pipelines.push_back(pso);
+ 		}
+ 	}
+@@ -282,6 +303,8 @@ public:
+ 		this->renderWidth = renderWidth;
+ 		this->renderHeight = renderHeight;
+ 
++		try {
++
+ 		blurRadiusScale = ((outputWidth > 0) && (renderWidth < outputWidth)) ? ((float)(renderWidth) / (float)(outputWidth)) : 1.0f;
+ 
+ 		nrd::DenoiserDesc denoiserDescs[] = {
+@@ -327,6 +350,15 @@ public:
+ 
+ 		hitDistanceParameters = {};
+ 		hitDistanceParameters.A *= kWorldUnitsPerMeter;
++		}
++		catch (const std::exception &e) {
++			fprintf(stderr, "RT64: NRD initialization failed: %s\n", e.what());
++			releaseResources();
++		}
++		catch (...) {
++			fprintf(stderr, "RT64: NRD initialization failed with an unknown error\n");
++			releaseResources();
++		}
+ 	}
+ 
+ 	void updateSettings(const DenoiseParameters &p) {
+diff --git a/src/rt64lib/private/rt64_view.cpp b/src/rt64lib/private/rt64_view.cpp
+index 1be2f85..a9cc33d 100644
+--- a/src/rt64lib/private/rt64_view.cpp
++++ b/src/rt64lib/private/rt64_view.cpp
+@@ -2035,7 +2035,10 @@ void RT64::View::render(float deltaTimeMs) {
+ 		d3dCommandList->ResourceBarrier(_countof(preDispatchBarriers), preDispatchBarriers);
+ 
+ 		// Bind pipeline and dispatch primary rays.
++		// AMD / vkd3d-proton do not implicitly bind the RTPSO global root signature.
++		// NVIDIA drivers do, which is why this used to look NVIDIA-only.
+ 		RT64_LOG_PRINTF("Dispatching primary rays");
++		d3dCommandList->SetComputeRootSignature(scene->getDevice()->getD3D12RtGlobalRootSignature());
+ 		d3dCommandList->SetPipelineState1(scene->getDevice()->getD3D12RtStateObject());
+ 		d3dCommandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
+ 		d3dCommandList->DispatchRays(&desc);

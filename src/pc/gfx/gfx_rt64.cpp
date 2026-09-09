@@ -1282,10 +1282,7 @@ static void gfx_rt64_rapi_init(void) {
             "%s\n\n"
             "Please make sure your GPU drivers are up to date and the Direct3D 12.1 feature level is supported.\n\n"
             "Windows 10 version 2004 or newer is also required for this feature level to work properly.\n\n"
-            "If you're a mobile user, make sure that the high performance device is selected for this application on your system's settings.\n\n"
-            "AMD GPUs: a driver crash while compiling shaders is a known Adrenalin bug. "
-            "Adrenalin 24.4.1 through 24.8.1 is the last range that runs the unpatched RT64 library. "
-            "Newer drivers need a rebuilt rt64lib.dll that binds the DXR global root signature before DispatchRays.",
+            "If you're a mobile user, make sure that the high performance device is selected for this application on your system's settings.",
             (rt64Error != nullptr) ? rt64Error : "No error message was reported.");
     }
 
