@@ -1225,7 +1225,7 @@ index 6a35a46..13600a6 100644
  
  	void updateSettings(const DenoiseParameters &p) {
 diff --git a/src/rt64lib/private/rt64_view.cpp b/src/rt64lib/private/rt64_view.cpp
-index e80870f..1ed1ec0 100644
+index e80870f..b13e3a7 100644
 --- a/src/rt64lib/private/rt64_view.cpp
 +++ b/src/rt64lib/private/rt64_view.cpp
 @@ -1083,69 +1083,86 @@ void RT64::View::writeSwapDescriptors(const std::function<D3D12_CPU_DESCRIPTOR_H
@@ -1372,10 +1372,10 @@ index e80870f..1ed1ec0 100644
 -			auto writeInstanceTextures = [&](const std::vector<RenderInstance> &instances) {
 -				for (const RenderInstance &inst : instances) {
 -					if (inst.customTextureHeapIndex < 0) { continue; }
- 
+-
 -					D3D12_CPU_DESCRIPTOR_HANDLE instanceHandle = descriptorHeap->GetCPUDescriptorHandleForHeapStart();
 -					instanceHandle.ptr += (size_t)(customTextureHeapStart() + inst.customTextureHeapIndex) * handleIncrement;
--
+ 
 -					Texture *const instanceTextures[RT64_CUSTOM_RASTER_MAX_TEXTURES] = {
 -						(inst.instance != nullptr) ? inst.instance->getDiffuseTexture() : nullptr,
 -						(inst.instance != nullptr) ? inst.instance->getDiffuse2Texture() : nullptr
@@ -1385,10 +1385,6 @@ index e80870f..1ed1ec0 100644
 -						if (instanceTextures[i] != nullptr) {
 -							textureSRVDesc.Format = instanceTextures[i]->getFormat();
 -							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(instanceTextures[i]->getTexture(), &textureSRVDesc, instanceHandle);
--						}
--						else {
--							textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
--							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(nullptr, &textureSRVDesc, instanceHandle);
 +			if (customTextureSlots > 0) {
 +				auto writeInstanceTextures = [&](const std::vector<RenderInstance> &instances) {
 +					for (const RenderInstance &inst : instances) {
@@ -1413,6 +1409,10 @@ index e80870f..1ed1ec0 100644
 +
 +							instanceHandle.ptr += handleIncrement;
  						}
+-						else {
+-							textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+-							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(nullptr, &textureSRVDesc, instanceHandle);
+-						}
 -
 -						instanceHandle.ptr += handleIncrement;
  					}
@@ -1485,7 +1485,7 @@ index e80870f..1ed1ec0 100644
  		RT64_LOG_PRINTF("Drawing raytraced instances");
  
  		// Ray generation.
-@@ -2190,10 +2205,22 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2190,10 +2205,35 @@ void RT64::View::render(float deltaTimeMs) {
  		d3dCommandList->ResourceBarrier(_countof(preDispatchBarriers), preDispatchBarriers);
  
  		// Bind pipeline and dispatch primary rays.
@@ -1502,42 +1502,57 @@ index e80870f..1ed1ec0 100644
 +			d3dCommandList->SetComputeRootDescriptorTable(1, rtSamplerTable);
 +			d3dCommandList->DispatchRays(&desc);
 +		};
++		// Windows TDR is ~2s per ExecuteCommandLists. Primary anyhit plus
++		// shadows in one packet still hangs AMD after a level load.
++		auto flushAmdRayPacket = [&]() {
++			if (!scene->getDevice()->isAmdGpu()) {
++				return;
++			}
++			scene->getDevice()->submitCommandList();
++			scene->getDevice()->waitForGPU();
++			scene->getDevice()->resetCommandList();
++			d3dCommandList->SetPipelineState1(scene->getDevice()->getD3D12RtStateObject());
++			d3dCommandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
++		};
  		d3dCommandList->SetPipelineState1(scene->getDevice()->getD3D12RtStateObject());
  		d3dCommandList->SetDescriptorHeaps(static_cast<UINT>(heaps.size()), heaps.data());
 -		d3dCommandList->DispatchRays(&desc);
 +		dispatchRays();
++		flushAmdRayPacket();
  
  		// Barriers for shading buffers before dispatching secondary rays.
  		CD3DX12_RESOURCE_BARRIER shadingBarriers[] = {
-@@ -2212,12 +2239,14 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2212,12 +2252,16 @@ void RT64::View::render(float deltaTimeMs) {
  		// Dispatch rays for direct light.
  		RT64_LOG_PRINTF("Dispatching direct light rays");
  		desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize();
 -		d3dCommandList->DispatchRays(&desc);
 +		dispatchRays();
++		flushAmdRayPacket();
  
- 		// Dispatch rays for indirect light.
--		RT64_LOG_PRINTF("Dispatching indirect light rays");
--		desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 2;
+-		// Dispatch rays for indirect light.
++		// Always dispatch indirect. giSamples==0 still writes ambientBase+ambientNoGI
++		// into the GI buffer. Skipping that left Compose with an uninitialized or
++		// zero buffer: yellow/orange "sunset" lighting and intermittent sparkles.
+ 		RT64_LOG_PRINTF("Dispatching indirect light rays");
+ 		desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 2;
 -		d3dCommandList->DispatchRays(&desc);
-+		if (globalParamsBufferData.giSamples > 0) {
-+			RT64_LOG_PRINTF("Dispatching indirect light rays");
-+			desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 2;
-+			dispatchRays();
-+		}
++		dispatchRays();
++		flushAmdRayPacket();
  
  		// Wait until indirect light is done before dispatching reflection or refraction rays.
  		// TODO: This is only required to prevent simultaneous usage of the anyhit buffers.
-@@ -2228,7 +2257,7 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2228,7 +2272,8 @@ void RT64::View::render(float deltaTimeMs) {
  		if (rtAnyRefraction) {
  			RT64_LOG_PRINTF("Dispatching refraction rays");
  			desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 4;
 -			d3dCommandList->DispatchRays(&desc);
 +			dispatchRays();
++			flushAmdRayPacket();
  
  			// Wait until refraction is done before dispatching reflection rays.
  			// TODO: This is only required to prevent simultaneous usage of the anyhit buffers.
-@@ -2237,11 +2266,11 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2237,11 +2282,12 @@ void RT64::View::render(float deltaTimeMs) {
  			d3dCommandList->ResourceBarrier(1, &refractionBarrier);
  		}
  
@@ -1548,19 +1563,21 @@ index e80870f..1ed1ec0 100644
  			desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 5;
 -			d3dCommandList->DispatchRays(&desc);
 +			dispatchRays();
++			flushAmdRayPacket();
  		}
  
  		if (rtAnyReflection) {
-@@ -2250,7 +2279,7 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2250,7 +2296,8 @@ void RT64::View::render(float deltaTimeMs) {
  				// Dispatch rays for reflection.
  				RT64_LOG_PRINTF("Dispatching reflection rays");
  				desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 3;
 -				d3dCommandList->DispatchRays(&desc);
 +				dispatchRays();
++				flushAmdRayPacket();
  				reflections--;
  
  				// Add a barrier to wait for the input UAVs to be finished if there's more passes left to be done.
-@@ -3080,6 +3109,12 @@ bool RT64::View::getUpscalerAccelerated(UpscaleMode mode) const {
+@@ -3080,6 +3127,12 @@ bool RT64::View::getUpscalerAccelerated(UpscaleMode mode) const {
  }
  
  void RT64::View::setFrameGenEnabled(bool v) {
