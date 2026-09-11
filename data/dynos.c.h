@@ -43,7 +43,6 @@ u8 dynos_audio_alloc_sequence(void);
 
 // -- geos -- //
 void dynos_actor_override(struct Object* obj, void** aSharedChild);
-void dynos_actor_override_report(struct GraphNode *originalNode, struct GraphNode *replacementNode);
 bool dynos_add_actor_custom(s32 modIndex, s32 modFileIndex, const char *filePath, const char* geoName);
 const void *dynos_geolayout_get(const char *name);
 const char *dynos_geolayout_get_name(const void *geoLayout);

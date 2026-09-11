@@ -93,6 +93,7 @@ bool gfx_rt64_inspector_active(void);
 bool gfx_rt64_handle_window_message(void *hWnd, u32 message, uintptr_t wParam, intptr_t lParam);
 void gfx_rt64_main_loop_iter(void (*runOneGameIter)(void));
 void gfx_rt64_acquire_cpu_frame(void);
+u64 gfx_rt64_get_generated_frame_count(void);
 
 #else
 
@@ -118,6 +119,7 @@ static inline bool gfx_rt64_inspector_active(void) { return false; }
 static inline bool gfx_rt64_handle_window_message(void *hWnd, u32 message, uintptr_t wParam, intptr_t lParam) { (void)(hWnd); (void)(message); (void)(wParam); (void)(lParam); return false; }
 static inline void gfx_rt64_main_loop_iter(void (*runOneGameIter)(void)) { (void)(runOneGameIter); }
 static inline void gfx_rt64_acquire_cpu_frame(void) { }
+static inline u64 gfx_rt64_get_generated_frame_count(void) { return 0; }
 
 #endif
 

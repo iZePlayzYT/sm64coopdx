@@ -35,6 +35,11 @@ static void gfx_rt64_ensure_config_dir(void) {
     fs_sys_mkdir(fs_get_write_path("mods"));
 }
 
+static void gfx_rt64_area_lighting_key_split(u32 key, u32 *outLevelNum, u32 *outAreaIndex) {
+    *outLevelNum = key / MAX_AREAS;
+    *outAreaIndex = key % MAX_AREAS;
+}
+
 //
 // Texture names
 //
@@ -239,7 +244,7 @@ void gfx_rt64_load_level_lights(void) {
     }
 }
 
-void gfx_gfx_rt64_set_level_lights(u32 levelIndex, u32 areaIndex, const std::vector<RT64_LIGHT> *lights, const RT64_SCENE_DESC *sceneDesc) {
+static void gfx_rt64_set_level_lights(u32 levelIndex, u32 areaIndex, const std::vector<RT64_LIGHT> *lights, const RT64_SCENE_DESC *sceneDesc) {
     if ((levelIndex >= (u32)(RT64_MAX_LEVELS)) || (areaIndex >= (u32)(MAX_AREAS))) { return; }
 
     const std::lock_guard<std::mutex> lightingLock(RT64.levelAreaLightingMutex);
@@ -441,7 +446,7 @@ void gfx_rt64_load_geo_layout_mods(void) {
     }
 }
 
-void gfx_gfx_rt64_set_geo_layout_mod(const std::string &geoName, const RT64_MATERIAL *materialMod, const RT64_LIGHT *lightMod, const std::string &bumpMapName, const std::string &normalMapName, const std::string &specularMapName) {
+static void gfx_rt64_set_geo_layout_mod(const std::string &geoName, const RT64_MATERIAL *materialMod, const RT64_LIGHT *lightMod, const std::string &bumpMapName, const std::string &normalMapName, const std::string &specularMapName) {
     if (geoName.empty()) { return; }
 
     RecordedMod *recordedMod = gfx_rt64_bind_geo_layout_mod(geoName);
@@ -492,7 +497,7 @@ void gfx_rt64_load_texture_mods(void) {
     }
 }
 
-void gfx_gfx_rt64_set_texture_mod(const std::string &texName, const RT64_MATERIAL *materialMod, const RT64_LIGHT *lightMod, const std::string &bumpMapName, const std::string &normalMapName, const std::string &specularMapName) {
+static void gfx_rt64_set_texture_mod(const std::string &texName, const RT64_MATERIAL *materialMod, const RT64_LIGHT *lightMod, const std::string &bumpMapName, const std::string &normalMapName, const std::string &specularMapName) {
     if (texName.empty()) { return; }
 
     const std::lock_guard<std::mutex> texModsLock(RT64.texModsMutex);
@@ -681,6 +686,15 @@ static void gfx_rt64_lua_read_scene_description(lua_State *L, int index, RT64_SC
     gfx_rt64_lua_get_number_field(L, index, "giSkyStrength", &sceneDesc->giSkyStrength, context);
 }
 
+static void gfx_rt64_lua_read_bool_attribute(lua_State *L, int index, const char *key, u32 *outValue, RT64_MATERIAL *materialMod, s32 attribute) {
+    lua_getfield(L, index, key);
+    if (!lua_isnil(L, -1)) {
+        *outValue = lua_toboolean(L, -1) ? 1u : 0u;
+        materialMod->enabledAttributes |= attribute;
+    }
+    lua_pop(L, 1);
+}
+
 static void gfx_rt64_lua_read_material_mod(lua_State *L, int index, RT64_MATERIAL *materialMod, const char *context) {
     memset(materialMod, 0, sizeof(RT64_MATERIAL));
     materialMod->enabledAttributes = RT64_ATTRIBUTE_NONE;
@@ -729,40 +743,9 @@ static void gfx_rt64_lua_read_material_mod(lua_State *L, int index, RT64_MATERIA
         }
     }
 
-    lua_getfield(L, index, "specularTint");
-    if (!lua_isnil(L, -1)) {
-        materialMod->specularTint = lua_toboolean(L, -1) ? 1u : 0u;
-        materialMod->enabledAttributes |= RT64_ATTRIBUTE_SPECULAR_TINT;
-    }
-    lua_pop(L, 1);
-
-    lua_getfield(L, index, "shadowEnabled");
-    if (!lua_isnil(L, -1)) {
-        materialMod->shadowEnabled = lua_toboolean(L, -1) ? 1u : 0u;
-        materialMod->enabledAttributes |= RT64_ATTRIBUTE_SHADOW_ENABLED;
-    }
-    lua_pop(L, 1);
-
-    lua_getfield(L, index, "shadowCenter");
-    if (!lua_isnil(L, -1)) {
-        materialMod->shadowCenter = lua_toboolean(L, -1) ? 1u : 0u;
-        materialMod->enabledAttributes |= RT64_ATTRIBUTE_SHADOW_CENTER;
-    }
-    lua_pop(L, 1);
-}
-
-static std::string gfx_rt64_lua_loading_mod_texture_root(void) {
-    struct Mod *mod = (gLuaLoadingMod != nullptr) ? gLuaLoadingMod : gLuaActiveMod;
-    if ((mod == nullptr) || !mod->isDirectory || (mod->basePath[0] == '\0')) {
-        return std::string();
-    }
-
-    std::string root = mod->basePath;
-    if ((root.back() != '/') && (root.back() != '\\')) {
-        root += "/";
-    }
-
-    return root + "textures/";
+    gfx_rt64_lua_read_bool_attribute(L, index, "specularTint", &materialMod->specularTint, materialMod, RT64_ATTRIBUTE_SPECULAR_TINT);
+    gfx_rt64_lua_read_bool_attribute(L, index, "shadowEnabled", &materialMod->shadowEnabled, materialMod, RT64_ATTRIBUTE_SHADOW_ENABLED);
+    gfx_rt64_lua_read_bool_attribute(L, index, "shadowCenter", &materialMod->shadowCenter, materialMod, RT64_ATTRIBUTE_SHADOW_CENTER);
 }
 
 static void gfx_rt64_lua_read_recorded_mod(lua_State *L, int index, RT64_MATERIAL *materialMod, bool *outHasMaterial, RT64_LIGHT *lightMod, bool *outHasLight, std::string *outBumpMapName, std::string *outNormalMapName, std::string *outSpecularMapName, const char *context) {
@@ -785,7 +768,7 @@ static void gfx_rt64_lua_read_recorded_mod(lua_State *L, int index, RT64_MATERIA
     (*outNormalMapName) = gfx_rt64_lua_get_string_field(L, index, "normalMap", context);
     (*outSpecularMapName) = gfx_rt64_lua_get_string_field(L, index, "specularMap", context);
 
-    const std::string modRoot = gfx_rt64_lua_loading_mod_texture_root();
+    const std::string modRoot = gfx_rt64_mod_texture_root((gLuaLoadingMod != nullptr) ? gLuaLoadingMod : gLuaActiveMod);
     const char *preferredRoot = modRoot.empty() ? nullptr : modRoot.c_str();
     if (!outNormalMapName->empty()) {
         gfx_rt64_register_map_texture(outNormalMapName->c_str(), preferredRoot);
@@ -818,7 +801,7 @@ void gfx_rt64_lua_register_level_lights(lua_State *L, int levelNum, int areaInde
     RT64_SCENE_DESC sceneDesc;
     {
         const std::lock_guard<std::mutex> lightingLock(RT64.levelAreaLightingMutex);
-        sceneDesc = gfx_gfx_rt64_get_area_lighting(levelNum, areaIndex).sceneDesc;
+        sceneDesc = gfx_rt64_get_area_lighting(levelNum, areaIndex).sceneDesc;
     }
 
     bool hasScene = false;
@@ -856,7 +839,7 @@ void gfx_rt64_lua_register_level_lights(lua_State *L, int levelNum, int areaInde
         lua_pop(L, 1);
     }
 
-    gfx_gfx_rt64_set_level_lights(levelNum, areaIndex, hasLights ? &lights : nullptr, hasScene ? &sceneDesc : nullptr);
+    gfx_rt64_set_level_lights(levelNum, areaIndex, hasLights ? &lights : nullptr, hasScene ? &sceneDesc : nullptr);
 }
 
 void gfx_rt64_lua_register_texture_mod(lua_State *L, const char *name, int tableIndex) {
@@ -868,7 +851,7 @@ void gfx_rt64_lua_register_texture_mod(lua_State *L, const char *name, int table
     std::string bumpMapName, normalMapName, specularMapName;
     gfx_rt64_lua_read_recorded_mod(L, tableIndex, &materialMod, &hasMaterial, &lightMod, &hasLight, &bumpMapName, &normalMapName, &specularMapName, context);
 
-    gfx_gfx_rt64_set_texture_mod(name, hasMaterial ? &materialMod : nullptr, hasLight ? &lightMod : nullptr, bumpMapName, normalMapName, specularMapName);
+    gfx_rt64_set_texture_mod(name, hasMaterial ? &materialMod : nullptr, hasLight ? &lightMod : nullptr, bumpMapName, normalMapName, specularMapName);
 }
 
 void gfx_rt64_lua_register_geo_layout_mod(lua_State *L, const char *name, int tableIndex) {
@@ -882,7 +865,7 @@ void gfx_rt64_lua_register_geo_layout_mod(lua_State *L, const char *name, int ta
     std::string bumpMapName, normalMapName, specularMapName;
     gfx_rt64_lua_read_recorded_mod(L, tableIndex, &materialMod, &hasMaterial, &lightMod, &hasLight, &bumpMapName, &normalMapName, &specularMapName, context);
 
-    gfx_gfx_rt64_set_geo_layout_mod(name, hasMaterial ? &materialMod : nullptr, hasLight ? &lightMod : nullptr, bumpMapName, normalMapName, specularMapName);
+    gfx_rt64_set_geo_layout_mod(name, hasMaterial ? &materialMod : nullptr, hasLight ? &lightMod : nullptr, bumpMapName, normalMapName, specularMapName);
 }
 
 //
