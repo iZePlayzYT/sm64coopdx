@@ -1,3 +1,20 @@
+diff --git a/src/rt64lib/contrib/nv_helpers_dx12/BottomLevelASGenerator.cpp b/src/rt64lib/contrib/nv_helpers_dx12/BottomLevelASGenerator.cpp
+index 7e7d379..a0f6b94 100644
+--- a/src/rt64lib/contrib/nv_helpers_dx12/BottomLevelASGenerator.cpp
++++ b/src/rt64lib/contrib/nv_helpers_dx12/BottomLevelASGenerator.cpp
+@@ -243,5 +243,12 @@ void BottomLevelASGenerator::Generate(
+   
+   // Build the AS
+   commandList->BuildRaytracingAccelerationStructure(&buildDesc, 0, nullptr);
++
++  // Top-level AS already waits on its result. Bottom-level builds did not, so
++  // AMD can refit the TLAS / DispatchRays against a BLAS that is still writing.
++  D3D12_RESOURCE_BARRIER uavBarrier = {};
++  uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
++  uavBarrier.UAV.pResource = resultBuffer;
++  commandList->ResourceBarrier(1, &uavBarrier);
+ }
+ } // namespace nv_helpers_dx12
 diff --git a/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.cpp b/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.cpp
 index 560142d..377fbe0 100644
 --- a/src/rt64lib/contrib/nv_helpers_dx12/RaytracingPipelineGenerator.cpp
@@ -454,7 +471,7 @@ index 654d392..4358097 100644
    // ray generation, then the miss shaders, and finally the set of hit groups
    uint32_t offset = 0;
 diff --git a/src/rt64lib/private/rt64_common.h b/src/rt64lib/private/rt64_common.h
-index ccb0b51..5940aac 100644
+index ccb0b51..93774f0 100644
 --- a/src/rt64lib/private/rt64_common.h
 +++ b/src/rt64lib/private/rt64_common.h
 @@ -16,6 +16,7 @@
@@ -465,7 +482,7 @@ index ccb0b51..5940aac 100644
  #include <d3d12.h>
  
  #include "D3D12MemoryAllocator/D3D12MemAlloc.h"
-@@ -370,19 +371,19 @@ namespace RT64 {
+@@ -370,19 +371,29 @@ namespace RT64 {
  #define D3D12_CHECK( call )                                                         \
      do                                                                              \
      {                                                                               \
@@ -475,10 +492,22 @@ index ccb0b51..5940aac 100644
 +        if (FAILED(d3d12CallResult))                                                \
          {																	        \
  			char errorMessage[512];													\
- 			snprintf(errorMessage, sizeof(errorMessage), "D3D12 call " #call " "	\
+-			snprintf(errorMessage, sizeof(errorMessage), "D3D12 call " #call " "	\
 -				"failed with error code %X.", hr);									\
-+				"failed with error code %X.", d3d12CallResult);						\
- 																					\
+-																					\
++			if ((d3d12CallResult == DXGI_ERROR_DEVICE_REMOVED) ||                   \
++				(d3d12CallResult == DXGI_ERROR_DEVICE_RESET) ||                     \
++				(d3d12CallResult == DXGI_ERROR_DEVICE_HUNG)) {                      \
++				snprintf(errorMessage, sizeof(errorMessage),                        \
++					"D3D12 call " #call " failed with error code %X. "              \
++					"The GPU already hung (same as Present deviceRemovedReason "    \
++					"0x887A0006); this is not an allocator/out-of-memory failure.", \
++					d3d12CallResult);                                               \
++			}                                                                       \
++			else {                                                                  \
++				snprintf(errorMessage, sizeof(errorMessage), "D3D12 call " #call " "	\
++					"failed with error code %X.", d3d12CallResult);					\
++			}                                                                       \
              throw std::runtime_error(errorMessage);                                 \
          }                                                                           \
      } while( 0 )
@@ -490,7 +519,7 @@ index ccb0b51..5940aac 100644
  		fprintf(stderr, "%s\n", e.what());				\
  	}
 diff --git a/src/rt64lib/private/rt64_device.cpp b/src/rt64lib/private/rt64_device.cpp
-index 2173804..402b6e1 100644
+index 2173804..48b29e8 100644
 --- a/src/rt64lib/private/rt64_device.cpp
 +++ b/src/rt64lib/private/rt64_device.cpp
 @@ -4,6 +4,9 @@
@@ -698,15 +727,15 @@ index 2173804..402b6e1 100644
 +			handleAdapterError("No raytracing support.");
 +			return false;
 +		}
++
++		d3dAdapter = adapter;
++		d3dAdapter->AddRef();
  
 -#		ifndef RT64_MINIMAL
 -			// FIXME: Work around AMD's mipmap generation being corrupted until a solution is found.
 -			// Refer to https://github.com/DarioSamo/RT64/issues/54
 -			if (wcsstr(desc.Description, L"AMD") != nullptr) {
 -				disableMipmaps = true;
-+		d3dAdapter = adapter;
-+		d3dAdapter->AddRef();
-+
 +		if (desc.VendorId == 0x1002) {
 +			amdGpu = true;
 +#ifndef RT64_MINIMAL
@@ -1018,7 +1047,22 @@ index 2173804..402b6e1 100644
  	if (fgSwapChainActive) {
  		return true;
  	}
-@@ -1974,7 +2063,7 @@ void RT64::Device::draw(int vsyncInterval, float deltaTimeMs) {
+@@ -1965,6 +2054,14 @@ void RT64::Device::draw(int vsyncInterval, float deltaTimeMs) {
+ 		scene->update();
+ 	}
+ 
++	// AMD TDR is ~2s per submitted GPU packet. BLAS/TLAS builds plus DispatchRays in
++	// one ExecuteCommandLists is enough to hang after a level load. Split them.
++	if (isAmdGpu()) {
++		submitCommandList();
++		waitForGPU();
++		resetCommandList();
++	}
++
+ 	// Determine the active view (use the first available view for now).
+ 	View *activeView = nullptr;
+ 	for (Scene *scene : scenes) {
+@@ -1974,7 +2071,7 @@ void RT64::Device::draw(int vsyncInterval, float deltaTimeMs) {
  		}
  	}
  
@@ -1181,7 +1225,7 @@ index 6a35a46..13600a6 100644
  
  	void updateSettings(const DenoiseParameters &p) {
 diff --git a/src/rt64lib/private/rt64_view.cpp b/src/rt64lib/private/rt64_view.cpp
-index e80870f..22d8858 100644
+index e80870f..1ed1ec0 100644
 --- a/src/rt64lib/private/rt64_view.cpp
 +++ b/src/rt64lib/private/rt64_view.cpp
 @@ -1083,69 +1083,86 @@ void RT64::View::writeSwapDescriptors(const std::function<D3D12_CPU_DESCRIPTOR_H
@@ -1328,7 +1372,7 @@ index e80870f..22d8858 100644
 -			auto writeInstanceTextures = [&](const std::vector<RenderInstance> &instances) {
 -				for (const RenderInstance &inst : instances) {
 -					if (inst.customTextureHeapIndex < 0) { continue; }
--
+ 
 -					D3D12_CPU_DESCRIPTOR_HANDLE instanceHandle = descriptorHeap->GetCPUDescriptorHandleForHeapStart();
 -					instanceHandle.ptr += (size_t)(customTextureHeapStart() + inst.customTextureHeapIndex) * handleIncrement;
 -
@@ -1336,11 +1380,15 @@ index e80870f..22d8858 100644
 -						(inst.instance != nullptr) ? inst.instance->getDiffuseTexture() : nullptr,
 -						(inst.instance != nullptr) ? inst.instance->getDiffuse2Texture() : nullptr
 -					};
- 
+-
 -					for (unsigned int i = 0; i < RT64_CUSTOM_RASTER_MAX_TEXTURES; i++) {
 -						if (instanceTextures[i] != nullptr) {
 -							textureSRVDesc.Format = instanceTextures[i]->getFormat();
 -							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(instanceTextures[i]->getTexture(), &textureSRVDesc, instanceHandle);
+-						}
+-						else {
+-							textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+-							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(nullptr, &textureSRVDesc, instanceHandle);
 +			if (customTextureSlots > 0) {
 +				auto writeInstanceTextures = [&](const std::vector<RenderInstance> &instances) {
 +					for (const RenderInstance &inst : instances) {
@@ -1365,10 +1413,6 @@ index e80870f..22d8858 100644
 +
 +							instanceHandle.ptr += handleIncrement;
  						}
--						else {
--							textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
--							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(nullptr, &textureSRVDesc, instanceHandle);
--						}
 -
 -						instanceHandle.ptr += handleIncrement;
  					}
@@ -1465,7 +1509,7 @@ index e80870f..22d8858 100644
  
  		// Barriers for shading buffers before dispatching secondary rays.
  		CD3DX12_RESOURCE_BARRIER shadingBarriers[] = {
-@@ -2212,12 +2239,12 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2212,12 +2239,14 @@ void RT64::View::render(float deltaTimeMs) {
  		// Dispatch rays for direct light.
  		RT64_LOG_PRINTF("Dispatching direct light rays");
  		desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize();
@@ -1473,14 +1517,18 @@ index e80870f..22d8858 100644
 +		dispatchRays();
  
  		// Dispatch rays for indirect light.
- 		RT64_LOG_PRINTF("Dispatching indirect light rays");
- 		desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 2;
+-		RT64_LOG_PRINTF("Dispatching indirect light rays");
+-		desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 2;
 -		d3dCommandList->DispatchRays(&desc);
-+		dispatchRays();
++		if (globalParamsBufferData.giSamples > 0) {
++			RT64_LOG_PRINTF("Dispatching indirect light rays");
++			desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 2;
++			dispatchRays();
++		}
  
  		// Wait until indirect light is done before dispatching reflection or refraction rays.
  		// TODO: This is only required to prevent simultaneous usage of the anyhit buffers.
-@@ -2228,7 +2255,7 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2228,7 +2257,7 @@ void RT64::View::render(float deltaTimeMs) {
  		if (rtAnyRefraction) {
  			RT64_LOG_PRINTF("Dispatching refraction rays");
  			desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 4;
@@ -1489,7 +1537,7 @@ index e80870f..22d8858 100644
  
  			// Wait until refraction is done before dispatching reflection rays.
  			// TODO: This is only required to prevent simultaneous usage of the anyhit buffers.
-@@ -2237,11 +2264,11 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2237,11 +2266,11 @@ void RT64::View::render(float deltaTimeMs) {
  			d3dCommandList->ResourceBarrier(1, &refractionBarrier);
  		}
  
@@ -1503,7 +1551,7 @@ index e80870f..22d8858 100644
  		}
  
  		if (rtAnyReflection) {
-@@ -2250,7 +2277,7 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2250,7 +2279,7 @@ void RT64::View::render(float deltaTimeMs) {
  				// Dispatch rays for reflection.
  				RT64_LOG_PRINTF("Dispatching reflection rays");
  				desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 3;
@@ -1512,7 +1560,7 @@ index e80870f..22d8858 100644
  				reflections--;
  
  				// Add a barrier to wait for the input UAVs to be finished if there's more passes left to be done.
-@@ -3080,6 +3107,12 @@ bool RT64::View::getUpscalerAccelerated(UpscaleMode mode) const {
+@@ -3080,6 +3109,12 @@ bool RT64::View::getUpscalerAccelerated(UpscaleMode mode) const {
  }
  
  void RT64::View::setFrameGenEnabled(bool v) {
@@ -1525,6 +1573,18 @@ index e80870f..22d8858 100644
  	if (frameGenEnabled != v) {
  		frameGenEnabled = v;
  		rtRecreateBuffers = true;
+diff --git a/src/rt64lib/shaders/CustomSurfaceHit.hlsl b/src/rt64lib/shaders/CustomSurfaceHit.hlsl
+index f19d70a..4521448 100644
+--- a/src/rt64lib/shaders/CustomSurfaceHit.hlsl
++++ b/src/rt64lib/shaders/CustomSurfaceHit.hlsl
+@@ -30,6 +30,7 @@ void CustomSurfaceAnyHit(inout HitInfo payload, Attributes attrib) {
+ 
+ 	// This hit is beyond a confirmed-opaque surface and is never visible.
+ 	if (RayTCurrent() > (payload.opaqueT + maxDepthBias)) {
++		IgnoreHit();
+ 		return;
+ 	}
+ 
 diff --git a/src/rt64lib/shaders/IndirectRayGen.hlsl b/src/rt64lib/shaders/IndirectRayGen.hlsl
 index 57d072b..ff1f8fb 100644
 --- a/src/rt64lib/shaders/IndirectRayGen.hlsl
@@ -1612,6 +1672,18 @@ index 756aeb3..5aded48 100644
 +	for (uint hit = 0; hit < min(payload.nhits, MAX_HIT_QUERIES); hit++) {
  		uint hitBufferIndex = getHitBufferIndex(hit, launchIndex, launchDims);
  		float4 hitColor = gHitColor[hitBufferIndex];
+ 
+diff --git a/src/rt64lib/shaders/UberSurfaceHit.hlsl b/src/rt64lib/shaders/UberSurfaceHit.hlsl
+index 3d22dc0..c058534 100644
+--- a/src/rt64lib/shaders/UberSurfaceHit.hlsl
++++ b/src/rt64lib/shaders/UberSurfaceHit.hlsl
+@@ -35,6 +35,7 @@ void UberSurfaceAnyHit(inout HitInfo payload, Attributes attrib) {
+ 
+ 	// This hit is beyond a confirmed-opaque surface and is never visible.
+ 	if (RayTCurrent() > (payload.opaqueT + maxDepthBias)) {
++		IgnoreHit();
+ 		return;
+ 	}
  
 diff --git a/src/rt64lib/shaders/VolumetricRayGen.hlsl b/src/rt64lib/shaders/VolumetricRayGen.hlsl
 index 6bf3367..7403b85 100644
