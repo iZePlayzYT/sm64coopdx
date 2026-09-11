@@ -490,7 +490,7 @@ index ccb0b51..5940aac 100644
  		fprintf(stderr, "%s\n", e.what());				\
  	}
 diff --git a/src/rt64lib/private/rt64_device.cpp b/src/rt64lib/private/rt64_device.cpp
-index 2173804..bfe4d70 100644
+index 2173804..402b6e1 100644
 --- a/src/rt64lib/private/rt64_device.cpp
 +++ b/src/rt64lib/private/rt64_device.cpp
 @@ -4,6 +4,9 @@
@@ -503,7 +503,15 @@ index 2173804..bfe4d70 100644
  
  #include <dwmapi.h>
  
-@@ -71,6 +74,7 @@ RT64::Device::Device(HWND hwnd) {
+@@ -62,6 +65,7 @@
+ 
+ RT64::Device::Device(HWND hwnd) {
+ 	RT64_LOG_OPEN("rt64.log");
++	amdGpu = false;
+ 
+ 	createDXGIFactory();
+ 	createRaytracingDevice();
+@@ -71,6 +75,7 @@ RT64::Device::Device(HWND hwnd) {
  	this->hwnd = hwnd;
  	d3dAllocator = nullptr;
  	d3dRtStateObject = nullptr;
@@ -511,7 +519,7 @@ index 2173804..bfe4d70 100644
  	lastCommandQueueBarrierActive = false;
  	lastCopyQueueBarrierActive = false;
  	meshBatchActive = false;
-@@ -108,12 +112,12 @@ RT64::Device::Device(HWND hwnd) {
+@@ -108,12 +113,12 @@ RT64::Device::Device(HWND hwnd) {
  	surfaceMissID = nullptr;
  	shadowMissID = nullptr;
  	blueNoise = nullptr;
@@ -525,7 +533,7 @@ index 2173804..bfe4d70 100644
  	d3dDxcCompiler = nullptr;
  	d3dDxcLibrary = nullptr;
  	d3dComposeRootSignature = nullptr;
-@@ -174,6 +178,10 @@ RT64::Device::~Device() {
+@@ -174,6 +179,10 @@ RT64::Device::~Device() {
  	delete blueNoise;
  	blueNoise = nullptr;
  
@@ -536,7 +544,7 @@ index 2173804..bfe4d70 100644
  	for (auto &pipelinePair : d3dCustomRasterPipelines) {
  		ReleaseCom(&pipelinePair.second);
  	}
-@@ -189,7 +197,7 @@ RT64::Device::~Device() {
+@@ -189,7 +198,7 @@ RT64::Device::~Device() {
  
  	ReleaseCom(&d3dRtStateObjectProps);
  	ReleaseCom(&d3dRtStateObject);
@@ -545,7 +553,7 @@ index 2173804..bfe4d70 100644
  	ReleaseCom(&d3dUberSurfaceHitLibrary);
  	ReleaseCom(&d3dUberShadowHitLibrary);
  	ReleaseCom(&d3dUberHitSignature);
-@@ -259,13 +267,49 @@ void RT64::Device::createDXGIFactory() {
+@@ -259,13 +268,49 @@ void RT64::Device::createDXGIFactory() {
  	UINT dxgiFactoryFlags = 0;
  	dxgiFactory = nullptr;
  
@@ -600,10 +608,11 @@ index 2173804..bfe4d70 100644
  	}
  #endif
  
-@@ -275,70 +319,86 @@ void RT64::Device::createDXGIFactory() {
+@@ -275,70 +320,90 @@ void RT64::Device::createDXGIFactory() {
  void RT64::Device::createRaytracingDevice() {
  	d3dAdapter = nullptr;
  	d3dDevice = nullptr;
++	amdGpu = false;
 +#ifndef RT64_MINIMAL
 +	disableMipmaps = false;
 +#endif
@@ -618,16 +627,16 @@ index 2173804..bfe4d70 100644
 -		for (UINT adapterIndex = 0; dxgiFactory->EnumAdapters1(adapterIndex, &d3dAdapter) != DXGI_ERROR_NOT_FOUND; ++adapterIndex) {
 -			d3dAdapter->GetDesc1(&desc);
 +		adapter->GetDesc1(&desc);
-+
-+		if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
-+			return false;
-+		}
  
 -			// Ignore software adapters.
 -			if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
 -				d3dAdapter->Release();
 -				d3dAdapter = nullptr;
 -				continue;
++		if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) {
++			return false;
++		}
++
 +		auto handleAdapterError = [this, &ss, &desc, adapterIndex](const std::string &errorSuffix) {
 +			ss << "Adapter " << win32::Utf16ToUtf8(desc.Description) << " (#" << adapterIndex << "): " << errorSuffix << std::endl;
 +			if (d3dDevice != nullptr) {
@@ -689,21 +698,24 @@ index 2173804..bfe4d70 100644
 +			handleAdapterError("No raytracing support.");
 +			return false;
 +		}
-+
-+		d3dAdapter = adapter;
-+		d3dAdapter->AddRef();
  
 -#		ifndef RT64_MINIMAL
 -			// FIXME: Work around AMD's mipmap generation being corrupted until a solution is found.
 -			// Refer to https://github.com/DarioSamo/RT64/issues/54
 -			if (wcsstr(desc.Description, L"AMD") != nullptr) {
 -				disableMipmaps = true;
-+#ifndef RT64_MINIMAL
-+		// AMD mipmap generation is corrupted on this backend (https://github.com/DarioSamo/RT64/issues/54).
++		d3dAdapter = adapter;
++		d3dAdapter->AddRef();
++
 +		if (desc.VendorId == 0x1002) {
++			amdGpu = true;
++#ifndef RT64_MINIMAL
++			// AMD mipmap generation is corrupted on this backend (https://github.com/DarioSamo/RT64/issues/54).
 +			disableMipmaps = true;
-+		}
 +#endif
++			fprintf(stderr, "RT64: AMD GPU detected; FSR frame generation is disabled\n");
++			RT64_LOG_PRINTF("AMD GPU detected; FSR frame generation is disabled");
++		}
 +
 +		RT64_LOG_PRINTF("Selected adapter: %s", win32::Utf16ToUtf8(desc.Description).c_str());
 +		return true;
@@ -739,7 +751,18 @@ index 2173804..bfe4d70 100644
  	if (d3dDevice == nullptr) {
  		throw std::runtime_error("Unable to detect a device capable of raytracing.\n" + ss.str());
  	}
-@@ -464,6 +524,10 @@ ID3D12StateObjectProperties *RT64::Device::getD3D12RtStateObjectProperties() con
+@@ -444,6 +509,10 @@ HWND RT64::Device::getHwnd() const {
+ 	return hwnd;
+ }
+ 
++bool RT64::Device::isAmdGpu() const {
++	return amdGpu;
++}
++
+ ID3D12Device8 *RT64::Device::getD3D12Device() const {
+ 	return d3dDevice;
+ }
+@@ -464,6 +533,10 @@ ID3D12StateObjectProperties *RT64::Device::getD3D12RtStateObjectProperties() con
  	return d3dRtStateObjectProps;
  }
  
@@ -750,7 +773,7 @@ index 2173804..bfe4d70 100644
  ID3D12Resource *RT64::Device::getD3D12RenderTarget() const {
  	return d3dRenderTargets[d3dFrameIndex];
  }
-@@ -596,6 +660,14 @@ RT64::Texture *RT64::Device::getBlueNoiseTexture() const {
+@@ -596,6 +669,14 @@ RT64::Texture *RT64::Device::getBlueNoiseTexture() const {
  	return blueNoise;
  }
  
@@ -765,7 +788,7 @@ index 2173804..bfe4d70 100644
  CD3DX12_VIEWPORT RT64::Device::getD3D12Viewport() const {
  	return d3dViewport;
  }
-@@ -1114,6 +1186,10 @@ void RT64::Device::loadAssets() {
+@@ -1114,6 +1195,10 @@ void RT64::Device::loadAssets() {
  
  	loadBlueNoise();
  
@@ -776,7 +799,7 @@ index 2173804..bfe4d70 100644
  	RT64_LOG_PRINTF("Waiting for asset load to finish");
  
  	// Close command list and wait for it to finish.
-@@ -1127,6 +1203,38 @@ void RT64::Device::loadBlueNoise() {
+@@ -1127,6 +1212,38 @@ void RT64::Device::loadBlueNoise() {
  	blueNoise->setRGBA8(LDR_64_64_64_RGB1_BGRA8, sizeof(LDR_64_64_64_RGB1_BGRA8), 512, 512, 512 * 4, false);
  }
  
@@ -815,7 +838,7 @@ index 2173804..bfe4d70 100644
  void RT64::Device::createRaytracingPipeline() {
  	RT64_LOG_PRINTF("Raytracing pipeline creation started");
  
-@@ -1135,6 +1243,11 @@ void RT64::Device::createRaytracingPipeline() {
+@@ -1135,6 +1252,11 @@ void RT64::Device::createRaytracingPipeline() {
  
  	nv_helpers_dx12::RayTracingPipelineGenerator pipeline(d3dDevice);
  
@@ -827,7 +850,7 @@ index 2173804..bfe4d70 100644
  	RT64_LOG_PRINTF("Loading shader libraries");
  
  	// Shader libraries.
-@@ -1184,9 +1297,7 @@ void RT64::Device::createRaytracingPipeline() {
+@@ -1184,9 +1306,7 @@ void RT64::Device::createRaytracingPipeline() {
  
  	RT64_LOG_PRINTF("Creating root signatures");
  
@@ -837,7 +860,7 @@ index 2173804..bfe4d70 100644
  	if (d3dCustomHitSignature == nullptr) { d3dCustomHitSignature = createCustomHitSignature(true); }
  	if (d3dCustomShadowHitSignature == nullptr) { d3dCustomShadowHitSignature = createCustomHitSignature(false); }
  
-@@ -1215,10 +1326,10 @@ void RT64::Device::createRaytracingPipeline() {
+@@ -1215,10 +1335,10 @@ void RT64::Device::createRaytracingPipeline() {
  
  	RT64_LOG_PRINTF("Adding root signature associations");
  
@@ -852,7 +875,7 @@ index 2173804..bfe4d70 100644
  
  	addedCustomShaders.clear();
  	for (Shader *customShader : customShaders) {
-@@ -1237,7 +1348,9 @@ void RT64::Device::createRaytracingPipeline() {
+@@ -1237,7 +1357,9 @@ void RT64::Device::createRaytracingPipeline() {
  	}
  
  	// Pipeline configuration. Path tracing only needs one recursion level at most.
@@ -863,7 +886,7 @@ index 2173804..bfe4d70 100644
  	pipeline.SetMaxAttributeSize(2 * sizeof(float));
  	pipeline.SetMaxRecursionDepth(1);
  
-@@ -1306,10 +1419,10 @@ void RT64::Device::createDxcCompiler() {
+@@ -1306,10 +1428,10 @@ void RT64::Device::createDxcCompiler() {
  	RT64_LOG_PRINTF("Compiler creation finished");
  }
  
@@ -877,7 +900,7 @@ index 2173804..bfe4d70 100644
  	rsc.AddHeapRangesParameter({
  		RT64_UAV_DESCRIPTORS(RT64_UAV_RANGE_ENTRY)
  		{ SRV_INDEX(gBackground), 1, 0, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, HEAP_INDEX(gBackground) },
-@@ -1322,8 +1435,11 @@ ID3D12RootSignature *RT64::Device::createRayGenSignature() {
+@@ -1322,8 +1444,11 @@ ID3D12RootSignature *RT64::Device::createRayGenSignature() {
  		{ CBV_INDEX(gParams), 1, 0, D3D12_DESCRIPTOR_RANGE_TYPE_CBV, HEAP_INDEX(gParams) }
  	});
  
@@ -891,7 +914,7 @@ index 2173804..bfe4d70 100644
  	desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
  	desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
  	desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-@@ -1338,38 +1454,15 @@ ID3D12RootSignature *RT64::Device::createRayGenSignature() {
+@@ -1338,38 +1463,15 @@ ID3D12RootSignature *RT64::Device::createRayGenSignature() {
  	desc.ShaderRegister = 0;
  	desc.RegisterSpace = 0;
  
@@ -932,7 +955,7 @@ index 2173804..bfe4d70 100644
  	for (unsigned int i = 1; i < RT64_MAX_SHADER_UNIFORM_BLOCKS; i++) {
  		rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_CBV, i);
  	}
-@@ -1378,34 +1471,10 @@ ID3D12RootSignature *RT64::Device::createCustomHitSignature(bool hitBuffers) {
+@@ -1378,34 +1480,10 @@ ID3D12RootSignature *RT64::Device::createCustomHitSignature(bool hitBuffers) {
  }
  
  ID3D12RootSignature *RT64::Device::createUberHitSignature(bool hitBuffers) {
@@ -968,7 +991,7 @@ index 2173804..bfe4d70 100644
  	return rsc.Generate(d3dDevice, true, false, nullptr, 0);
  }
  
-@@ -1853,7 +1922,14 @@ void RT64::Device::postRender(int vsyncInterval, View *activeView, bool frameGen
+@@ -1853,7 +1931,14 @@ void RT64::Device::postRender(int vsyncInterval, View *activeView, bool frameGen
  
  	// Present the frame.
  	const UINT presentFlags = ((vsyncInterval == 0) && allowTearing) ? DXGI_PRESENT_ALLOW_TEARING : 0;
@@ -984,11 +1007,39 @@ index 2173804..bfe4d70 100644
  	waitForGPU();
  	d3dFrameIndex = d3dSwapChain->GetCurrentBackBufferIndex();
  
+@@ -1867,6 +1952,10 @@ void RT64::Device::postRender(int vsyncInterval, View *activeView, bool frameGen
+ }
+ 
+ bool RT64::Device::enableFrameGenSwapChain() {
++	if (isAmdGpu()) {
++		return false;
++	}
++
+ 	if (fgSwapChainActive) {
+ 		return true;
+ 	}
+@@ -1974,7 +2063,7 @@ void RT64::Device::draw(int vsyncInterval, float deltaTimeMs) {
+ 		}
+ 	}
+ 
+-	const bool frameGenEnabled = (activeView != nullptr) && activeView->getFrameGen()->isInitialized() &&
++	const bool frameGenEnabled = (activeView != nullptr) && !isAmdGpu() && activeView->getFrameGen()->isInitialized() &&
+ 		activeView->getFrameGenEnabled() && enableFrameGenSwapChain();
+ 
+ 	d3dFrameIndex = d3dSwapChain->GetCurrentBackBufferIndex();
 diff --git a/src/rt64lib/private/rt64_device.h b/src/rt64lib/private/rt64_device.h
-index 631d364..f25ef55 100644
+index 631d364..1dac479 100644
 --- a/src/rt64lib/private/rt64_device.h
 +++ b/src/rt64lib/private/rt64_device.h
-@@ -102,13 +102,15 @@ namespace RT64 {
+@@ -36,6 +36,7 @@ namespace RT64 {
+ 		IDXGIAdapter1 *d3dAdapter;
+ 		ID3D12Device8 *d3dDevice;
+ 		IDXGIFactory4 *dxgiFactory;
++		bool amdGpu;
+ 
+ 		void createDXGIFactory();
+ 		void createRaytracingDevice();
+@@ -102,13 +103,15 @@ namespace RT64 {
  		void *surfaceMissID;
  		void *shadowMissID;
  		Texture *blueNoise;
@@ -1005,7 +1056,7 @@ index 631d364..f25ef55 100644
  
  		IDxcBlob *d3dUberSurfaceHitLibrary;
  		IDxcBlob *d3dUberShadowHitLibrary;
-@@ -164,10 +166,11 @@ namespace RT64 {
+@@ -164,10 +167,11 @@ namespace RT64 {
  		void loadPipeline();
  		void loadAssets();
  		void loadBlueNoise();
@@ -1018,7 +1069,13 @@ index 631d364..f25ef55 100644
  		ID3D12RootSignature *createUberHitSignature(bool hitBuffers);
  		ID3D12RootSignature *createCustomHitSignature(bool hitBuffers);
  		ID3D12RootSignature *d3dCustomHitSignature;
-@@ -194,6 +197,7 @@ namespace RT64 {
+@@ -189,11 +193,13 @@ namespace RT64 {
+ 		void addInspector(Inspector* inspector);
+ 		void removeInspector(Inspector* inspector);
+ 		HWND getHwnd() const;
++		bool isAmdGpu() const;
+ 		ID3D12Device8 *getD3D12Device() const;
+ 		D3D12MA::Allocator *getD3D12Allocator() const;
  		ID3D12GraphicsCommandList4 *getD3D12CommandList() const;
  		ID3D12StateObject *getD3D12RtStateObject() const;
  		ID3D12StateObjectProperties *getD3D12RtStateObjectProperties() const;
@@ -1026,7 +1083,7 @@ index 631d364..f25ef55 100644
  		ID3D12Resource *getD3D12RenderTarget() const;
  		CD3DX12_CPU_DESCRIPTOR_HANDLE getD3D12RTV() const;
  		IDXGISwapChain3 *getD3D12SwapChain() const;
-@@ -240,6 +244,8 @@ namespace RT64 {
+@@ -240,6 +246,8 @@ namespace RT64 {
  		IDxcLibrary *getDxcLibrary() const;
  		Mipmaps *getMipmaps() const;
  		Texture *getBlueNoiseTexture() const;
@@ -1035,6 +1092,21 @@ index 631d364..f25ef55 100644
  		CD3DX12_VIEWPORT getD3D12Viewport() const;
  		CD3DX12_RECT getD3D12ScissorRect() const;
  		AllocatedResource allocateResource(D3D12_HEAP_TYPE HeapType, _In_  const D3D12_RESOURCE_DESC *pDesc, D3D12_RESOURCE_STATES InitialResourceState, _In_opt_  const D3D12_CLEAR_VALUE *pOptimizedClearValue, bool committed = false, bool shared = false);
+diff --git a/src/rt64lib/private/rt64_framegen.cpp b/src/rt64lib/private/rt64_framegen.cpp
+index 34c58c4..75553e6 100644
+--- a/src/rt64lib/private/rt64_framegen.cpp
++++ b/src/rt64lib/private/rt64_framegen.cpp
+@@ -83,6 +83,10 @@ public:
+             return false;
+         }
+ 
++        if (device->isAmdGpu()) {
++            return false;
++        }
++
+         release();
+ 
+         ffx::CreateBackendDX12Desc backendDesc{};
 diff --git a/src/rt64lib/private/rt64_nrd.cpp b/src/rt64lib/private/rt64_nrd.cpp
 index 6a35a46..13600a6 100644
 --- a/src/rt64lib/private/rt64_nrd.cpp
@@ -1109,7 +1181,7 @@ index 6a35a46..13600a6 100644
  
  	void updateSettings(const DenoiseParameters &p) {
 diff --git a/src/rt64lib/private/rt64_view.cpp b/src/rt64lib/private/rt64_view.cpp
-index e80870f..0dc9e5e 100644
+index e80870f..22d8858 100644
 --- a/src/rt64lib/private/rt64_view.cpp
 +++ b/src/rt64lib/private/rt64_view.cpp
 @@ -1083,69 +1083,86 @@ void RT64::View::writeSwapDescriptors(const std::function<D3D12_CPU_DESCRIPTOR_H
@@ -1269,10 +1341,6 @@ index e80870f..0dc9e5e 100644
 -						if (instanceTextures[i] != nullptr) {
 -							textureSRVDesc.Format = instanceTextures[i]->getFormat();
 -							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(instanceTextures[i]->getTexture(), &textureSRVDesc, instanceHandle);
--						}
--						else {
--							textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
--							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(nullptr, &textureSRVDesc, instanceHandle);
 +			if (customTextureSlots > 0) {
 +				auto writeInstanceTextures = [&](const std::vector<RenderInstance> &instances) {
 +					for (const RenderInstance &inst : instances) {
@@ -1297,6 +1365,10 @@ index e80870f..0dc9e5e 100644
 +
 +							instanceHandle.ptr += handleIncrement;
  						}
+-						else {
+-							textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+-							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(nullptr, &textureSRVDesc, instanceHandle);
+-						}
 -
 -						instanceHandle.ptr += handleIncrement;
  					}
@@ -1440,6 +1512,19 @@ index e80870f..0dc9e5e 100644
  				reflections--;
  
  				// Add a barrier to wait for the input UAVs to be finished if there's more passes left to be done.
+@@ -3080,6 +3107,12 @@ bool RT64::View::getUpscalerAccelerated(UpscaleMode mode) const {
+ }
+ 
+ void RT64::View::setFrameGenEnabled(bool v) {
++	if (scene->getDevice()->isAmdGpu()) {
++		if (v) {
++			fprintf(stderr, "RT64: FSR frame generation is disabled on AMD\n");
++		}
++		v = false;
++	}
+ 	if (frameGenEnabled != v) {
+ 		frameGenEnabled = v;
+ 		rtRecreateBuffers = true;
 diff --git a/src/rt64lib/shaders/IndirectRayGen.hlsl b/src/rt64lib/shaders/IndirectRayGen.hlsl
 index 57d072b..ff1f8fb 100644
 --- a/src/rt64lib/shaders/IndirectRayGen.hlsl
