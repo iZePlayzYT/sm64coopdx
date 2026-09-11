@@ -29,11 +29,6 @@ extern "C" {
 #include "game/area.h"
 }
 
-#ifndef RT64_INSPECTOR_ENABLED
-#define RT64_INSPECTOR_ENABLED 1
-#endif
-
-#define RT64_MAX_GEO_LAYOUT_STACK_SIZE  32
 #define RT64_CACHED_MESH_REQUIRED_FRAMES 5
 #define RT64_CACHED_MESH_MAX_PER_FRAME  1
 #define RT64_CACHED_MESH_EVICT_FRAMES   300 // Idle frames before geometry is released
@@ -61,6 +56,10 @@ struct ShaderProgramRT64 {
     std::vector<RT64_SHADER_INPUT> customVertexInputs;
     std::atomic<bool> customShaderFailed{false};
 };
+
+static inline bool gfx_rt64_program_uses_custom_shader(const ShaderProgramRT64 *prg) {
+    return prg->hasCustomShader && !prg->customShaderFailed.load(std::memory_order_relaxed);
+}
 
 struct RecordedTexture {
     bool linearFilter;
@@ -128,7 +127,6 @@ struct GameMesh {
     u32 vertexCount = 0;
     u32 vertexStride = 0;
     u32 indexCount = 0;
-    bool useTexture = false;
     bool raytrace = false;
 };
 
@@ -210,9 +208,6 @@ struct InspectorMessage {
 struct RT64Context {
     // Window data.
     HWND hwnd = NULL;
-    bool isFullScreen = false;
-    bool cursorVisible = true;
-    bool windowActive = true;
     bool useVsync = true;
 
     // Game data.
@@ -370,36 +365,17 @@ struct RT64Context {
     std::unordered_map<u64, u32> stitchedSkyTextureKeys;
 
     // Timing.
-    LARGE_INTEGER startingTime, endingTime;
     LARGE_INTEGER frequency;
-    bool turboMode;
     std::atomic<bool> pauseMode;
 };
 
 extern RT64Context RT64;
 
-static inline bool gfx_rt64_frame_slot_is_busy(int frameIndex) {
-    if ((frameIndex == RT64.gpuFrameIndex) || (frameIndex == RT64.barrierFrameIndex)) {
-        return true;
-    }
-
-    for (int pendingIndex : RT64.pendingFrameIndices) {
-        if (pendingIndex == frameIndex) { return true; }
-    }
-
-    return false;
-}
-
 static inline u32 gfx_rt64_area_lighting_key(unsigned int levelNum, unsigned int areaIndex) {
     return (levelNum * MAX_AREAS) + areaIndex;
 }
 
-static inline void gfx_rt64_area_lighting_key_split(u32 key, u32 *outLevelNum, u32 *outAreaIndex) {
-    *outLevelNum = key / MAX_AREAS;
-    *outAreaIndex = key % MAX_AREAS;
-}
-
-static inline const AreaLighting &gfx_gfx_rt64_get_area_lighting(unsigned int levelNum, unsigned int areaIndex) {
+static inline const AreaLighting &gfx_rt64_get_area_lighting(unsigned int levelNum, unsigned int areaIndex) {
     auto it = RT64.levelAreaLighting.find(gfx_rt64_area_lighting_key(levelNum, areaIndex));
     return (it != RT64.levelAreaLighting.end()) ? it->second : RT64.defaultAreaLighting;
 }
@@ -419,6 +395,7 @@ void gfx_rt64_invalidate_mod_configs(void);
 
 struct ColorCombiner;
 struct FramePass;
+struct Mod;
 struct ShaderProgram;
 
 LARGE_INTEGER gfx_rt64_profile_marker(void);
@@ -430,8 +407,10 @@ u64 gfx_rt64_material_vanilla_name_hash(void);
 u64 gfx_rt64_material_mod_name_hash(void);
 u32 gfx_rt64_map_texture_key(u64 nameHash);
 u32 gfx_rt64_stitch_skybox_texture(const Texture *const *tiles);
+std::string gfx_rt64_mod_texture_root(struct Mod *mod);
 
 void gfx_rt64_destroy_all_shaders(void);
+void gfx_rt64_collect_uniform_blocks(struct Shader *const *shaders, int shaderCount, std::vector<RT64_SHADER_UNIFORM_BLOCK> &blocks, std::vector<u8> &data);
 void gfx_rt64_capture_post_process_uniforms(void);
 void gfx_rt64_render_thread(void);
 void gfx_rt64_destroy_gpu_mesh(GPUMesh &mesh);

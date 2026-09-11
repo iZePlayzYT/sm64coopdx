@@ -254,12 +254,6 @@ void DynOS_Actor_Invalid(const void* aGeoref, s32 aPackIndex) {
     _ValidActors.erase(aGeoref);
 }
 
-void DynOS_Actor_Override_Report(GraphNode *aOriginalNode, GraphNode *aReplacementNode) {
-    if (gfx_rt64_is_active()) {
-        gfx_rt64_inherit_graph_node_mod(aOriginalNode, aReplacementNode);
-    }
-}
-
 void DynOS_Actor_Override(struct Object* obj, void** aSharedChild) {
     if ((aSharedChild == NULL) || (*aSharedChild == NULL)) { return; }
 
@@ -284,8 +278,8 @@ void DynOS_Actor_Override(struct Object* obj, void** aSharedChild) {
         }
     }
 
-    if (*aSharedChild != (void*)it->second.mGraphNode) {
-        DynOS_Actor_Override_Report(*(GraphNode**)aSharedChild, it->second.mGraphNode);
+    if (gfx_rt64_is_active()) {
+        gfx_rt64_inherit_graph_node_mod(*aSharedChild, it->second.mGraphNode);
     }
 
     *aSharedChild = (void*)it->second.mGraphNode;

@@ -102,6 +102,7 @@ bool         configRT64GI                         = false;
 unsigned int configRT64Upscaler                   = 0;
 unsigned int configRT64UpscalerMode               = 0;
 bool         configRT64Denoiser                   = true;
+bool         configRT64FrameGen                   = false;
 // sound settings
 unsigned int configMasterVolume                   = 80; // 0 - MAX_VOLUME
 unsigned int configMusicVolume                    = MAX_VOLUME;
@@ -289,6 +290,7 @@ static const struct ConfigOption options[] = {
     {.name = "rt64_upscaler",                  .type = CONFIG_TYPE_UINT, .uintValue = &configRT64Upscaler},
     {.name = "rt64_upscaler_mode_common",      .type = CONFIG_TYPE_UINT, .uintValue = &configRT64UpscalerMode},
     {.name = "rt64_denoiser",                  .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64Denoiser},
+    {.name = "rt64_frame_gen",                 .type = CONFIG_TYPE_BOOL, .boolValue = &configRT64FrameGen},
     // sound settings
     {.name = "master_volume",                  .type = CONFIG_TYPE_UINT, .uintValue = &configMasterVolume},
     {.name = "music_volume",                   .type = CONFIG_TYPE_UINT, .uintValue = &configMusicVolume},

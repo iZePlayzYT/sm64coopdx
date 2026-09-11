@@ -9,6 +9,7 @@ extern "C" {
 #include "game/level_update.h"
 #include "game/rendering_graph_node.h"
 #include "goddard/gd_math.h"
+#include "menu/intro_geo.h"
 #include "gfx_cc.h"
 #include "pc/mods/mod.h"
 #include "pc/mods/mods.h"
@@ -18,7 +19,6 @@ extern "C" {
 
 #include <algorithm>
 #include <cassert>
-#include <set>
 #include <stdint.h>
 #include <windows.h>
 
@@ -99,6 +99,18 @@ int gfx_rt64_get_level_index(void) {
 int gfx_rt64_get_area_index(void) {
     int areaIndex = (gPlayerSpawnInfos[0].areaIndex >= 0) ? gCurrAreaIndex : 0;
     return (areaIndex >= 0 && areaIndex < MAX_AREAS) ? areaIndex : 0;
+}
+
+static bool gfx_rt64_frame_slot_is_busy(int frameIndex) {
+    if ((frameIndex == RT64.gpuFrameIndex) || (frameIndex == RT64.barrierFrameIndex)) {
+        return true;
+    }
+
+    for (int pendingIndex : RT64.pendingFrameIndices) {
+        if (pendingIndex == frameIndex) { return true; }
+    }
+
+    return false;
 }
 
 static RT64_COMBINER_DESC gfx_rt64_combiner_desc_from_cc(struct ColorCombiner *cc) {
@@ -487,24 +499,26 @@ void gfx_rt64_set_material_display_list(const void *displayList) {
 }
 
 bool gfx_rt64_shader_uses_full_vertex_layout(struct ShaderProgram *prg) {
-    if (prg == nullptr) { return false; }
-    const ShaderProgramRT64 *p = (const ShaderProgramRT64 *)(prg);
-    return p->hasCustomShader && !p->customShaderFailed.load(std::memory_order_relaxed);
+    return (prg != nullptr) && gfx_rt64_program_uses_custom_shader((const ShaderProgramRT64 *)(prg));
 }
 
 void gfx_rt64_toggle_inspector(void) {
-#if !RT64_INSPECTOR_ENABLED
-    return;
-#else
     if (!gfx_rt64_is_active()) {
         return;
     }
     RT64.renderInspectorActive = !RT64.renderInspectorActive;
-#endif
 }
 
 bool gfx_rt64_inspector_active(void) {
     return gfx_rt64_is_active() && RT64.renderInspectorActive;
+}
+
+u64 gfx_rt64_get_generated_frame_count(void) {
+    if (!gfx_rt64_is_active() || (RT64.lib.GetViewGeneratedFrameCount == nullptr)) {
+        return 0;
+    }
+
+    return RT64.lib.GetViewGeneratedFrameCount(RT64.view);
 }
 
 bool gfx_rt64_handle_window_message(void *hWnd, u32 message, uintptr_t wParam, intptr_t lParam) {
@@ -601,7 +615,7 @@ static void gfx_rt64_rapi_set_use_alpha(bool use_alpha) {
 bool gfx_rt64_use_vsync(void) {
     if (configWindow.vrr) { return false; }
 
-    return RT64.useVsync && !RT64.turboMode;
+    return RT64.useVsync;
 }
 
 static void gfx_rt64_rapi_set_vsync(bool enabled) {
@@ -709,33 +723,17 @@ static void gfx_rt64_smooth_zero_normals(float *vbo, unsigned int vertexCount, u
     }
 }
 
-u32 gfx_rt64_casted_shadow_group(const void *geoLayout) {
+static u32 gfx_rt64_casted_shadow_group(const void *geoLayout) {
     const uintptr_t address = (uintptr_t)(geoLayout);
     return (u32)((address >> 4) * 2654435761u) | 1u;
 }
 
 static void gfx_rt64_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, bool raytrace, GameDisplayList &displayList) {
-    const bool useTexture = RT64.shaderProgram->usedTextures[0] || RT64.shaderProgram->usedTextures[1];
-    const int numInputs = RT64.shaderProgram->numInputs;
-    const bool useAlpha = RT64.shaderProgram->cc.optAlpha != 0;
-    unsigned int vertexCount = 0;
-    unsigned int vertexStride = 0;
-    unsigned int indexCount = (unsigned int)(buf_vbo_num_tris * 3);
-    void *vertexBuffer = buf_vbo;
-    if (RT64.shaderProgram->hasCustomShader && !raytrace &&
-        !RT64.shaderProgram->customShaderFailed.load(std::memory_order_relaxed)) {
-        const unsigned int floatsPerVertex = 4 + 4 + 2 + 2 + 2 + (8 * 4) + 3 + 3;
-        vertexStride = floatsPerVertex * (unsigned int)(sizeof(float));
-    } else {
-        const unsigned int vertexFixedStride = 16 + 12;
-        vertexStride = vertexFixedStride + (useTexture ? 8 : 0) + numInputs * (useAlpha ? 16 : 12);
-    }
-    assert(((buf_vbo_len * 4) % vertexStride) == 0);
-
-    vertexCount = (unsigned int)((buf_vbo_len * 4) / vertexStride);
-    assert(buf_vbo_num_tris == (vertexCount / 3));
-
-    size_t vertexBufferSize = buf_vbo_len * sizeof(float);
+    const size_t vertexBufferSize = buf_vbo_len * sizeof(float);
+    const unsigned int vertexCount = (unsigned int)(buf_vbo_num_tris * 3);
+    const unsigned int vertexStride = (unsigned int)(vertexBufferSize / vertexCount);
+    const unsigned int indexCount = vertexCount;
+    assert((vertexBufferSize % vertexCount) == 0);
 
     // Make the vector large enough to fit the required meshes.
     if (displayList.meshes.size() < (size_t)(displayList.drawCount + 1)) {
@@ -744,7 +742,6 @@ static void gfx_rt64_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t bu
 
     // Try reusing the mesh that was stored in this index first.
     auto &dynMesh = displayList.meshes[displayList.drawCount];
-    dynMesh.useTexture = useTexture;
     dynMesh.raytrace = raytrace;
 
     if (raytrace) {
@@ -770,7 +767,7 @@ static void gfx_rt64_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t bu
     }
 
     // Free the previous vertex buffer if it's too small to fit the new vertex buffer.
-    if ((dynMesh.vertexBuffer != nullptr) && ((dynMesh.vertexCount * dynMesh.vertexStride) < (vertexCount * vertexStride))) {
+    if ((dynMesh.vertexBuffer != nullptr) && (((size_t)(dynMesh.vertexCount) * dynMesh.vertexStride) < vertexBufferSize)) {
         free(dynMesh.vertexBuffer);
         dynMesh.vertexBuffer = nullptr;
     }
@@ -783,7 +780,7 @@ static void gfx_rt64_process_mesh(float buf_vbo[], size_t buf_vbo_len, size_t bu
         }
     }
 
-    memcpy(dynMesh.vertexBuffer, vertexBuffer, vertexBufferSize);
+    memcpy(dynMesh.vertexBuffer, buf_vbo, vertexBufferSize);
     dynMesh.vertexCount = vertexCount;
     dynMesh.vertexStride = vertexStride;
     dynMesh.indexCount = indexCount;
@@ -859,40 +856,9 @@ static void gfx_rt64_draw_triangles_common(const Mat4 &transform, float buf_vbo[
     displayListInstance.uniformBlocks.clear();
     displayListInstance.uniformBlockData.clear();
 
-    if (RT64.shaderProgram->hasCustomShader &&
-        !RT64.shaderProgram->customShaderFailed.load(std::memory_order_relaxed)) {
+    if (gfx_rt64_program_uses_custom_shader(RT64.shaderProgram)) {
         struct Shader *const stages[2] = { RT64.shaderProgram->vertexShader, RT64.shaderProgram->fragmentShader };
-        for (int stage = 0; stage < 2; stage++) {
-            if (stages[stage] == nullptr) { continue; }
-
-            for (int i = 0; i < stages[stage]->uniformBlockCount; i++) {
-                const struct ShaderUniformBlock *block = &stages[stage]->uniformBlocks[i];
-                if ((block->size == 0) || (block->buffer == nullptr)) { continue; }
-
-                if (block->location >= RT64_MAX_SHADER_UNIFORM_BLOCKS) {
-                    static bool sReported = false;
-                    if (!sReported) {
-                        sReported = true;
-                        fprintf(stderr, "RT64: a shader declares more uniform blocks than there are constant buffer registers for (%d). The ones past that read as zero.\n",
-                            RT64_MAX_SHADER_UNIFORM_BLOCKS);
-                    }
-                    continue;
-                }
-
-                RT64_SHADER_UNIFORM_BLOCK entry;
-                entry.shaderRegister = block->location;
-                entry.size = block->size;
-                entry.data = nullptr;
-                displayListInstance.uniformBlocks.push_back(entry);
-                displayListInstance.uniformBlockData.insert(displayListInstance.uniformBlockData.end(), block->buffer, block->buffer + block->size);
-            }
-        }
-
-        size_t dataOffset = 0;
-        for (RT64_SHADER_UNIFORM_BLOCK &entry : displayListInstance.uniformBlocks) {
-            entry.data = displayListInstance.uniformBlockData.data() + dataOffset;
-            dataOffset += entry.size;
-        }
+        gfx_rt64_collect_uniform_blocks(stages, 2, displayListInstance.uniformBlocks, displayListInstance.uniformBlockData);
     }
 
     RT64_INSTANCE_DESC &instDesc = displayListInstance.desc;
@@ -1069,9 +1035,7 @@ void gfx_rt64_draw_triangles_ortho(float buf_vbo[], size_t buf_vbo_len, size_t b
 
 void gfx_rt64_draw_triangles_persp(float buf_vbo[], size_t buf_vbo_len, size_t buf_vbo_num_tris, float transform_affine[4][4], bool double_sided, u32 uid) {
     // Stop considering the orthographic projection triangles as background as soon as perspective triangles are drawn.
-    if (RT64.background) {
-        RT64.background = false;
-    }
+    RT64.background = false;
 
     Mat4 transform;
     mtxf_copy(transform, transform_affine);
@@ -1175,6 +1139,8 @@ static void gfx_rt64_apply_config(void) {
     desc.upscaler = configRT64Upscaler;
     desc.upscalerMode = configRT64UpscalerMode;
     desc.upscalerSharpness = configRT64UpscalerSharpness / 100.0f;
+    desc.frameGenEnabled = configRT64FrameGen;
+    desc.frameGenSuspended = gSkipInterpolationTitleScreen;
 
     desc.aspectRatio = gfx_current_dimensions.aspect_ratio;
 
@@ -1197,8 +1163,6 @@ static void gfx_rt64_rapi_init(void) {
 
     // Start timers.
     QueryPerformanceFrequency(&RT64.frequency);
-    RT64.startingTime = gfx_rt64_profile_marker();
-    RT64.turboMode = false;
 
     // Start the game paused. Let the render thread unpause it once it's ready.
     RT64.pauseMode = true;
@@ -1292,18 +1256,11 @@ static void gfx_rt64_rapi_init(void) {
     RT64.renderThread = new std::thread(gfx_rt64_render_thread);
 }
 
-static void gfx_rt64_get_dimensions(u32 *width, u32 *height) {
+static void gfx_rt64_rapi_on_resize(void) {
     RECT rect;
     GetClientRect(RT64.hwnd, &rect);
-    *width = rect.right - rect.left;
-    *height = rect.bottom - rect.top;
-}
-
-static void gfx_rt64_rapi_on_resize(void) {
-    u32 w = 0, h = 0;
-    gfx_rt64_get_dimensions(&w, &h);
-    configWindow.w = w;
-    configWindow.h = h;
+    configWindow.w = rect.right - rect.left;
+    configWindow.h = rect.bottom - rect.top;
 }
 
 static void gfx_rt64_rapi_shutdown(void) {
@@ -1511,11 +1468,12 @@ static void gfx_rt64_rapi_end_frame(void) {
         const std::lock_guard<std::mutex> lightingLock(RT64.levelAreaLightingMutex);
 
         // Update the scene's description.
-        const AreaLighting &areaLighting = gfx_gfx_rt64_get_area_lighting(levelIndex, areaIndex);
+        const AreaLighting &areaLighting = gfx_rt64_get_area_lighting(levelIndex, areaIndex);
         cpuFrame->sceneDesc = areaLighting.sceneDesc;
         vec3f_mult(cpuFrame->sceneDesc.skyDiffuseMultiplier, RT64.skyDiffuseMultiplier);
         cpuFrame->skyTextureKey = RT64.skyTextureKey;
-        cpuFrame->areaLightCount = (unsigned int)(areaLighting.lightCount);
+        const int lightCount = areaLighting.lightCount;
+        cpuFrame->areaLightCount = (lightCount < 0) ? 0u : (unsigned int)((lightCount > RT64_MAX_LEVEL_LIGHTS) ? RT64_MAX_LEVEL_LIGHTS : lightCount);
         memcpy(cpuFrame->areaLights, areaLighting.lights, sizeof(RT64_LIGHT) * cpuFrame->areaLightCount);
     }
 

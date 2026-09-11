@@ -2071,6 +2071,10 @@ static void gfx_draw_rectangle(int32_t ulx, int32_t uly, int32_t lrx, int32_t lr
     ur->z = 0.0f;
     ur->w = 1.0f;
 
+    if (sRt64Active) {
+        gfx_flush();
+    }
+
     // The coordinates for texture rectangle shall bypass the viewport setting
     Mat4 oldMatrixMVP;
     Mat4 oldMatrixM;

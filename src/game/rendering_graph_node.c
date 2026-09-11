@@ -13,7 +13,6 @@
 #include "shadow.h"
 #include "sm64.h"
 #include "pc/gfx/gfx_pc.h"
-#include "pc/gfx/gfx_rendering_api.h"
 #include "pc/gfx/gfx_rt64.h"
 #include "game/level_update.h"
 #include "pc/lua/smlua_hooks.h"
@@ -1473,11 +1472,7 @@ static s32 obj_is_in_view(struct GraphNodeObject *node, Mat4 matrix) {
 
     if (node->node.flags & GRAPH_RENDER_INVISIBLE) {
         return FALSE;
-    } else if (node->skipInViewCheck || !gCullingEnabled) {
-        return TRUE;
-    }
-
-    if (gfx_rt64_is_active()) {
+    } else if (node->skipInViewCheck || !gCullingEnabled || gfx_rt64_is_active()) {
         return TRUE;
     }
 

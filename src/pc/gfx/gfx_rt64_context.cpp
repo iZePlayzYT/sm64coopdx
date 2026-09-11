@@ -18,7 +18,6 @@ extern "C" {
 #include <cassert>
 #include <cmath>
 #include <cstddef>
-#include <set>
 #include <stdint.h>
 #include <windows.h>
 
@@ -52,6 +51,17 @@ LARGE_INTEGER gfx_rt64_profile_delta(LARGE_INTEGER start, LARGE_INTEGER end) {
     delta.QuadPart *= 1000000;
     delta.QuadPart /= RT64.frequency.QuadPart;
     return delta;
+}
+
+static RT64_TEXTURE_DESC gfx_rt64_rgba8_texture_desc(void *bytes, s32 width, s32 height) {
+    RT64_TEXTURE_DESC texDesc = {};
+    texDesc.bytes = bytes;
+    texDesc.width = width;
+    texDesc.height = height;
+    texDesc.rowPitch = width * 4;
+    texDesc.byteCount = height * texDesc.rowPitch;
+    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
+    return texDesc;
 }
 
 static void gfx_rt64_point_light_basis(f32 pitchDegrees, f32 yawDegrees, f32 rollDegrees, VEC_OUT Vec3f outForward, VEC_OUT Vec3f outRight, VEC_OUT Vec3f outUp) {
@@ -116,42 +126,45 @@ void gfx_rt64_destroy_all_shaders(void) {
     RT64.lastShaderVariant = nullptr;
 }
 
+void gfx_rt64_collect_uniform_blocks(struct Shader *const *shaders, int shaderCount, std::vector<RT64_SHADER_UNIFORM_BLOCK> &blocks, std::vector<u8> &data) {
+    for (int s = 0; s < shaderCount; s++) {
+        if (shaders[s] == nullptr) { continue; }
+
+        for (int i = 0; i < shaders[s]->uniformBlockCount; i++) {
+            const struct ShaderUniformBlock *block = &shaders[s]->uniformBlocks[i];
+            if ((block->size == 0) || (block->buffer == nullptr)) { continue; }
+
+            if (block->location >= RT64_MAX_SHADER_UNIFORM_BLOCKS) {
+                static bool sReported = false;
+                if (!sReported) {
+                    sReported = true;
+                    fprintf(stderr, "RT64: a shader declares more uniform blocks than there are constant buffer registers for (%d). The ones past that read as zero.\n",
+                        RT64_MAX_SHADER_UNIFORM_BLOCKS);
+                }
+                continue;
+            }
+
+            RT64_SHADER_UNIFORM_BLOCK entry;
+            entry.shaderRegister = block->location;
+            entry.size = block->size;
+            entry.data = nullptr;
+            blocks.push_back(entry);
+            data.insert(data.end(), block->buffer, block->buffer + block->size);
+        }
+    }
+
+    size_t dataOffset = 0;
+    for (RT64_SHADER_UNIFORM_BLOCK &entry : blocks) {
+        entry.data = data.data() + dataOffset;
+        dataOffset += entry.size;
+    }
+}
+
 void gfx_rt64_capture_post_process_uniforms(void) {
     const std::lock_guard<std::mutex> lock(RT64.postProcessMutex);
     RT64.postProcessUniformBlocks.clear();
     RT64.postProcessUniformData.clear();
-
-    if (RT64.postProcessShader == nullptr) { return; }
-
-    for (int i = 0; i < RT64.postProcessShader->uniformBlockCount; i++) {
-        const struct ShaderUniformBlock *block = &RT64.postProcessShader->uniformBlocks[i];
-        if ((block->size == 0) || (block->buffer == nullptr)) { continue; }
-
-        // As above - past the last register there is nowhere to put it, so say so rather than
-        // letting the shader read zeroes and leaving no sign of why.
-        if (block->location >= RT64_MAX_SHADER_UNIFORM_BLOCKS) {
-            static bool sReported = false;
-            if (!sReported) {
-                sReported = true;
-                fprintf(stderr, "RT64: the post process shader declares more uniform blocks than there are constant buffer registers for (%d). The ones past that read as zero.\n",
-                    RT64_MAX_SHADER_UNIFORM_BLOCKS);
-            }
-            continue;
-        }
-
-        RT64_SHADER_UNIFORM_BLOCK entry;
-        entry.shaderRegister = block->location;
-        entry.size = block->size;
-        entry.data = nullptr;
-        RT64.postProcessUniformBlocks.push_back(entry);
-        RT64.postProcessUniformData.insert(RT64.postProcessUniformData.end(), block->buffer, block->buffer + block->size);
-    }
-
-    size_t dataOffset = 0;
-    for (RT64_SHADER_UNIFORM_BLOCK &entry : RT64.postProcessUniformBlocks) {
-        entry.data = RT64.postProcessUniformData.data() + dataOffset;
-        dataOffset += entry.size;
-    }
+    gfx_rt64_collect_uniform_blocks(&RT64.postProcessShader, 1, RT64.postProcessUniformBlocks, RT64.postProcessUniformData);
 }
 
 static u16 gfx_rt64_shader_variant_key(bool raytrace, int filter, int hAddr, int vAddr, bool normalMap, bool specularMap, bool bumpMap) {
@@ -186,9 +199,7 @@ static RT64_SHADER *gfx_rt64_render_thread_load_shader_variant(ShaderProgramRT64
             flags |= RT64_SHADER_BUMP_MAP_ENABLED;
         }
 
-        const bool useCustomSource = shaderProgram->hasCustomShader &&
-                                     !shaderProgram->customShaderFailed.load(std::memory_order_relaxed);
-        if (useCustomSource) {
+        if (gfx_rt64_program_uses_custom_shader(shaderProgram)) {
             const char *fragmentOutputName = (shaderProgram->fragmentShader != nullptr) ? shaderProgram->fragmentShader->shaderOutputs[0].name : nullptr;
             RT64_SHADER *customShader = RT64.lib.CreateShaderFromSource(RT64.device, shaderProgram->cc, shaderProgram->customVertexHLSL.c_str(), shaderProgram->customFragmentHLSL.c_str(), shaderProgram->customVertexInputs.data(), (unsigned int)(shaderProgram->customVertexInputs.size()), fragmentOutputName, filter, hAddr, vAddr, flags);
 
@@ -725,14 +736,7 @@ void gfx_rt64_render_thread(void) {
     }
     memset(blankBytes, 0xFF, blankBytesCount);
 
-    RT64_TEXTURE_DESC texDesc = {};
-    texDesc.bytes = blankBytes;
-    texDesc.byteCount = blankBytesCount;
-    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
-    texDesc.width = blankTextureSize;
-    texDesc.height = blankTextureSize;
-    texDesc.rowPitch = texDesc.width * 4;
-    RT64.blankTexture = RT64.lib.CreateTexture(RT64.device, texDesc);
+    RT64.blankTexture = RT64.lib.CreateTexture(RT64.device, gfx_rt64_rgba8_texture_desc(blankBytes, blankTextureSize, blankTextureSize));
     free(blankBytes);
 
     // Upload any pending textures that the game has already queued up.
@@ -1150,6 +1154,20 @@ static void gfx_rt64_queue_texture_upload(u32 textureKey, u64 hash, u64 contentH
     RT64.textureUploadQueue.push(uploadTexture);
 }
 
+static u32 gfx_rt64_add_linear_texture(u64 hash, const RT64_TEXTURE_DESC &texDesc, const void *contentBytes, size_t contentSize) {
+    const u32 textureKey = 1 + (u32)(RT64.textures.size());
+    RecordedTexture &recorded = RT64.textures[textureKey];
+    recorded.linearFilter = true;
+    recorded.cms = 0;
+    recorded.cmt = 0;
+    recorded.hash = hash;
+
+    XXHash64 hashStream(0);
+    hashStream.add(contentBytes, contentSize);
+    gfx_rt64_queue_texture_upload(textureKey, hash, hashStream.hash(), texDesc);
+    return textureKey;
+}
+
 static bool gfx_rt64_texture_desc_from_file(RT64_TEXTURE_DESC &texDesc, const char *path, const u8 *fileBuf, size_t fileBufSize) {
     // Use special case for loading DDS directly.
     if (strstr(path, ".dds") || strstr(path, ".DDS")) {
@@ -1171,12 +1189,7 @@ static bool gfx_rt64_texture_desc_from_file(RT64_TEXTURE_DESC &texDesc, const ch
         return false;
     }
 
-    texDesc.bytes = data;
-    texDesc.width = width;
-    texDesc.height = height;
-    texDesc.rowPitch = texDesc.width * 4;
-    texDesc.byteCount = texDesc.height * texDesc.rowPitch;
-    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
+    texDesc = gfx_rt64_rgba8_texture_desc(data, width, height);
     return true;
 }
 
@@ -1188,24 +1201,19 @@ void gfx_rt64_upload_texture(u32 textureKey, const u8 *rgba32Buf, s32 width, s32
     RecordedTexture &recorded = RT64.textures[textureKey];
     gfx_rt64_filter_texture_id(recorded, textureKey, recorded.pendingName, contentHash);
 
-    RT64_TEXTURE_DESC texDesc = {};
-    texDesc.width = width;
-    texDesc.height = height;
-    texDesc.rowPitch = texDesc.width * 4;
-    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
-    texDesc.byteCount = texDesc.height * texDesc.rowPitch;
-    texDesc.bytes = malloc(texDesc.byteCount);
-    if (texDesc.bytes == nullptr) {
+    const size_t byteCount = (size_t)(width) * (size_t)(height) * 4;
+    void *bytes = malloc(byteCount);
+    if (bytes == nullptr) {
         return;
     }
-    memcpy(texDesc.bytes, rgba32Buf, texDesc.byteCount);
+    memcpy(bytes, rgba32Buf, byteCount);
 
-    gfx_rt64_queue_texture_upload(textureKey, recorded.hash, contentHash, texDesc);
+    gfx_rt64_queue_texture_upload(textureKey, recorded.hash, contentHash, gfx_rt64_rgba8_texture_desc(bytes, width, height));
 }
 
 static const char *sMapTextureExtensions[] = { "", ".png", ".dds", ".jpg", ".bmp" };
 
-static std::string gfx_rt64_mod_texture_root(struct Mod *mod) {
+std::string gfx_rt64_mod_texture_root(struct Mod *mod) {
     if ((mod == nullptr) || !mod->isDirectory || (mod->basePath[0] == '\0')) {
         return std::string();
     }
@@ -1287,17 +1295,7 @@ static u32 gfx_rt64_load_map_texture(u64 nameHash, const std::string &path) {
         return 0;
     }
 
-    const u32 textureKey = 1 + (u32)(RT64.textures.size());
-    RecordedTexture &recorded = RT64.textures[textureKey];
-    recorded.linearFilter = true;
-    recorded.cms = 0;
-    recorded.cmt = 0;
-    recorded.hash = nameHash;
-
-    XXHash64 hashStream(0);
-    hashStream.add(fileBuf.data(), fileBuf.size());
-    gfx_rt64_queue_texture_upload(textureKey, nameHash, hashStream.hash(), texDesc);
-
+    const u32 textureKey = gfx_rt64_add_linear_texture(nameHash, texDesc, fileBuf.data(), fileBuf.size());
     RT64.textureHashIdMap[nameHash] = textureKey;
     return textureKey;
 }
@@ -1318,25 +1316,8 @@ static u32 gfx_rt64_load_dynos_map_texture(u64 nameHash, const std::string &name
         return 0;
     }
 
-    RT64_TEXTURE_DESC texDesc = {};
-    texDesc.width = (int)(texInfo.width);
-    texDesc.height = (int)(texInfo.height);
-    texDesc.rowPitch = texDesc.width * 4;
-    texDesc.byteCount = texDesc.height * texDesc.rowPitch;
-    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
-    texDesc.bytes = rgba32;
-
-    const u32 textureKey = 1 + (u32)(RT64.textures.size());
-    RecordedTexture &recorded = RT64.textures[textureKey];
-    recorded.linearFilter = true;
-    recorded.cms = 0;
-    recorded.cmt = 0;
-    recorded.hash = nameHash;
-
-    XXHash64 hashStream(0);
-    hashStream.add(rgba32, (size_t)(texDesc.byteCount));
-    gfx_rt64_queue_texture_upload(textureKey, nameHash, hashStream.hash(), texDesc);
-
+    const RT64_TEXTURE_DESC texDesc = gfx_rt64_rgba8_texture_desc(rgba32, (s32)(texInfo.width), (s32)(texInfo.height));
+    const u32 textureKey = gfx_rt64_add_linear_texture(nameHash, texDesc, rgba32, (size_t)(texDesc.byteCount));
     RT64.textureHashIdMap[nameHash] = textureKey;
     return textureKey;
 }
@@ -1517,25 +1498,8 @@ u32 gfx_rt64_stitch_skybox_texture(const Texture *const *tiles) {
 
     for (u8 *rgba32 : tileRgba32) { free(rgba32); }
 
-    RT64_TEXTURE_DESC texDesc = {};
-    texDesc.width = (int)(panoramaWidth);
-    texDesc.height = (int)(panoramaHeight);
-    texDesc.rowPitch = texDesc.width * 4;
-    texDesc.byteCount = texDesc.height * texDesc.rowPitch;
-    texDesc.format = RT64_TEXTURE_FORMAT_RGBA8;
-    texDesc.bytes = panorama;
-
-    const u32 textureKey = 1 + (u32)(RT64.textures.size());
-    RecordedTexture &recorded = RT64.textures[textureKey];
-    recorded.linearFilter = true;
-    recorded.cms = 0;
-    recorded.cmt = 0;
-    recorded.hash = cacheKey;
-
-    XXHash64 contentHash(0);
-    contentHash.add(panorama, (size_t)(texDesc.byteCount));
-    gfx_rt64_queue_texture_upload(textureKey, cacheKey, contentHash.hash(), texDesc);
-
+    const RT64_TEXTURE_DESC texDesc = gfx_rt64_rgba8_texture_desc(panorama, (s32)(panoramaWidth), (s32)(panoramaHeight));
+    const u32 textureKey = gfx_rt64_add_linear_texture(cacheKey, texDesc, panorama, (size_t)(texDesc.byteCount));
     RT64.stitchedSkyTextureKeys[cacheKey] = textureKey;
     return textureKey;
 }

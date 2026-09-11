@@ -55,6 +55,7 @@
 #include "menu/intro_geo.h"
 
 #include "gfx_dimensions.h"
+#include "pc/gfx/gfx_rt64.h"
 #include "game/segment2.h"
 
 #include "engine/math_util.h"
@@ -96,6 +97,7 @@ static const f64 sFrameTime = (1.0 / ((double)FRAMERATE));
 static f64 sFpsTimeLast = 0;
 static f64 sFrameTimeStart = 0;
 static u32 sDrawnFrames = 0;
+static u64 sGeneratedFramesLast = 0;
 
 bool gGameInited = false;
 bool gGfxInited = false;
@@ -188,7 +190,12 @@ static inline void patch_interpolations(f32 delta) {
 }
 
 static void compute_fps(f64 curTime) {
-    u32 fps = round((f64) sDrawnFrames / MAX(0.001, curTime - sFpsTimeLast));
+    u64 generatedFrames = gfx_rt64_get_generated_frame_count();
+    u64 newGeneratedFrames = (generatedFrames >= sGeneratedFramesLast) ? (generatedFrames - sGeneratedFramesLast) : generatedFrames;
+    sGeneratedFramesLast = generatedFrames;
+
+    u32 fps = round((f64) (sDrawnFrames + newGeneratedFrames) / MAX(0.001, curTime - sFpsTimeLast));
+
     djui_fps_display_update(fps);
     sFpsTimeLast = curTime;
     sDrawnFrames = 0;

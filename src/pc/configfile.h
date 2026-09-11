@@ -69,6 +69,7 @@ extern bool         configRT64GI;
 extern unsigned int configRT64Upscaler;
 extern unsigned int configRT64UpscalerMode;
 extern bool         configRT64Denoiser;
+extern bool         configRT64FrameGen;
 // sound settings
 extern unsigned int configMasterVolume;
 extern unsigned int configMusicVolume;

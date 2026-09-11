@@ -14,8 +14,6 @@
 #include "hardcoded.h"
 #include "skybox.h"
 #include "pc/gfx/gfx_pc.h"
-#include "pc/gfx/gfx_rendering_api.h"
-#include "pc/gfx/gfx_rt64.h"
 
 /**
  * @file skybox.c
@@ -366,20 +364,17 @@ Gfx *create_skybox_facing_camera(s8 player, s8 background, f32 fov,
         colorIndex = 0;
     }
 
-    if (gfx_rt64_is_active()) {
-        u8 *color = sSkyboxColors[colorIndex];
-        float skyboxColor[3] = {
-            (color[0] / 255.0f) * (gSkyboxColor[0] / 255.0f),
-            (color[1] / 255.0f) * (gSkyboxColor[1] / 255.0f),
-            (color[2] / 255.0f) * (gSkyboxColor[2] / 255.0f),
-        };
-
-        const Texture *const *tiles = (background < 0 || background >= 10)
-            ? (const Texture *const *)gCustomSkyboxPtrList
-            : (const Texture *const *)segmented_to_virtual(sSkyboxTextures[background]);
-        if (gfx_set_skybox(tiles, skyboxColor)) {
-            return NULL;
-        }
+    u8 *color = sSkyboxColors[colorIndex];
+    float skyboxColor[3] = {
+        (color[0] / 255.0f) * (gSkyboxColor[0] / 255.0f),
+        (color[1] / 255.0f) * (gSkyboxColor[1] / 255.0f),
+        (color[2] / 255.0f) * (gSkyboxColor[2] / 255.0f),
+    };
+    const Texture *const *tiles = (background < 0 || background >= 10)
+        ? (const Texture *const *)gCustomSkyboxPtrList
+        : (const Texture *const *)segmented_to_virtual(sSkyboxTextures[background]);
+    if (gfx_set_skybox(tiles, skyboxColor)) {
+        return NULL;
     }
 
     //! fov is always set to 90.0f. If this line is removed, then the game crashes because fov is 0 on
