@@ -490,7 +490,7 @@ index ccb0b51..5940aac 100644
  		fprintf(stderr, "%s\n", e.what());				\
  	}
 diff --git a/src/rt64lib/private/rt64_device.cpp b/src/rt64lib/private/rt64_device.cpp
-index 8c7e9ff..72cca1a 100644
+index 2173804..bfe4d70 100644
 --- a/src/rt64lib/private/rt64_device.cpp
 +++ b/src/rt64lib/private/rt64_device.cpp
 @@ -4,6 +4,9 @@
@@ -503,7 +503,7 @@ index 8c7e9ff..72cca1a 100644
  
  #include <dwmapi.h>
  
-@@ -64,6 +67,7 @@ RT64::Device::Device(HWND hwnd) {
+@@ -71,6 +74,7 @@ RT64::Device::Device(HWND hwnd) {
  	this->hwnd = hwnd;
  	d3dAllocator = nullptr;
  	d3dRtStateObject = nullptr;
@@ -511,7 +511,7 @@ index 8c7e9ff..72cca1a 100644
  	lastCommandQueueBarrierActive = false;
  	lastCopyQueueBarrierActive = false;
  	meshBatchActive = false;
-@@ -101,12 +105,12 @@ RT64::Device::Device(HWND hwnd) {
+@@ -108,12 +112,12 @@ RT64::Device::Device(HWND hwnd) {
  	surfaceMissID = nullptr;
  	shadowMissID = nullptr;
  	blueNoise = nullptr;
@@ -525,7 +525,7 @@ index 8c7e9ff..72cca1a 100644
  	d3dDxcCompiler = nullptr;
  	d3dDxcLibrary = nullptr;
  	d3dComposeRootSignature = nullptr;
-@@ -162,6 +166,10 @@ RT64::Device::~Device() {
+@@ -174,6 +178,10 @@ RT64::Device::~Device() {
  	delete blueNoise;
  	blueNoise = nullptr;
  
@@ -536,7 +536,7 @@ index 8c7e9ff..72cca1a 100644
  	for (auto &pipelinePair : d3dCustomRasterPipelines) {
  		ReleaseCom(&pipelinePair.second);
  	}
-@@ -177,7 +185,7 @@ RT64::Device::~Device() {
+@@ -189,7 +197,7 @@ RT64::Device::~Device() {
  
  	ReleaseCom(&d3dRtStateObjectProps);
  	ReleaseCom(&d3dRtStateObject);
@@ -545,7 +545,7 @@ index 8c7e9ff..72cca1a 100644
  	ReleaseCom(&d3dUberSurfaceHitLibrary);
  	ReleaseCom(&d3dUberShadowHitLibrary);
  	ReleaseCom(&d3dUberHitSignature);
-@@ -238,13 +246,49 @@ void RT64::Device::createDXGIFactory() {
+@@ -259,13 +267,49 @@ void RT64::Device::createDXGIFactory() {
  	UINT dxgiFactoryFlags = 0;
  	dxgiFactory = nullptr;
  
@@ -600,7 +600,7 @@ index 8c7e9ff..72cca1a 100644
  	}
  #endif
  
-@@ -254,70 +298,86 @@ void RT64::Device::createDXGIFactory() {
+@@ -275,70 +319,86 @@ void RT64::Device::createDXGIFactory() {
  void RT64::Device::createRaytracingDevice() {
  	d3dAdapter = nullptr;
  	d3dDevice = nullptr;
@@ -692,7 +692,12 @@ index 8c7e9ff..72cca1a 100644
 +
 +		d3dAdapter = adapter;
 +		d3dAdapter->AddRef();
-+
+ 
+-#		ifndef RT64_MINIMAL
+-			// FIXME: Work around AMD's mipmap generation being corrupted until a solution is found.
+-			// Refer to https://github.com/DarioSamo/RT64/issues/54
+-			if (wcsstr(desc.Description, L"AMD") != nullptr) {
+-				disableMipmaps = true;
 +#ifndef RT64_MINIMAL
 +		// AMD mipmap generation is corrupted on this backend (https://github.com/DarioSamo/RT64/issues/54).
 +		if (desc.VendorId == 0x1002) {
@@ -703,12 +708,7 @@ index 8c7e9ff..72cca1a 100644
 +		RT64_LOG_PRINTF("Selected adapter: %s", win32::Utf16ToUtf8(desc.Description).c_str());
 +		return true;
 +	};
- 
--#		ifndef RT64_MINIMAL
--			// FIXME: Work around AMD's mipmap generation being corrupted until a solution is found.
--			// Refer to https://github.com/DarioSamo/RT64/issues/54
--			if (wcsstr(desc.Description, L"AMD") != nullptr) {
--				disableMipmaps = true;
++
 +	IDXGIFactory6 *factory6 = nullptr;
 +	if (SUCCEEDED(dxgiFactory->QueryInterface(IID_PPV_ARGS(&factory6)))) {
 +		for (UINT adapterIndex = 0; factory6->EnumAdapterByGpuPreference(adapterIndex, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&d3dAdapter)) != DXGI_ERROR_NOT_FOUND; ++adapterIndex) {
@@ -739,7 +739,7 @@ index 8c7e9ff..72cca1a 100644
  	if (d3dDevice == nullptr) {
  		throw std::runtime_error("Unable to detect a device capable of raytracing.\n" + ss.str());
  	}
-@@ -429,6 +489,10 @@ ID3D12StateObjectProperties *RT64::Device::getD3D12RtStateObjectProperties() con
+@@ -464,6 +524,10 @@ ID3D12StateObjectProperties *RT64::Device::getD3D12RtStateObjectProperties() con
  	return d3dRtStateObjectProps;
  }
  
@@ -750,7 +750,7 @@ index 8c7e9ff..72cca1a 100644
  ID3D12Resource *RT64::Device::getD3D12RenderTarget() const {
  	return d3dRenderTargets[d3dFrameIndex];
  }
-@@ -549,6 +613,14 @@ RT64::Texture *RT64::Device::getBlueNoiseTexture() const {
+@@ -596,6 +660,14 @@ RT64::Texture *RT64::Device::getBlueNoiseTexture() const {
  	return blueNoise;
  }
  
@@ -765,7 +765,7 @@ index 8c7e9ff..72cca1a 100644
  CD3DX12_VIEWPORT RT64::Device::getD3D12Viewport() const {
  	return d3dViewport;
  }
-@@ -1017,6 +1089,10 @@ void RT64::Device::loadAssets() {
+@@ -1114,6 +1186,10 @@ void RT64::Device::loadAssets() {
  
  	loadBlueNoise();
  
@@ -776,7 +776,7 @@ index 8c7e9ff..72cca1a 100644
  	RT64_LOG_PRINTF("Waiting for asset load to finish");
  
  	// Close command list and wait for it to finish.
-@@ -1030,6 +1106,26 @@ void RT64::Device::loadBlueNoise() {
+@@ -1127,6 +1203,38 @@ void RT64::Device::loadBlueNoise() {
  	blueNoise->setRGBA8(LDR_64_64_64_RGB1_BGRA8, sizeof(LDR_64_64_64_RGB1_BGRA8), 512, 512, 512 * 4, false);
  }
  
@@ -791,19 +791,31 @@ index 8c7e9ff..72cca1a 100644
 +	dummyBlack->setRGBA8(dummyBlackPixel, sizeof(dummyBlackPixel), 1, 1, 4, false);
 +
 +	const uint64_t dummySize = 512;
-+	dummyStructuredBuffer = allocateBuffer(D3D12_HEAP_TYPE_UPLOAD, dummySize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
-+	if (!dummyStructuredBuffer.IsNull()) {
++	AllocatedResource dummyUpload = allocateBuffer(D3D12_HEAP_TYPE_UPLOAD, dummySize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ);
++	dummyStructuredBuffer = allocateBuffer(D3D12_HEAP_TYPE_DEFAULT, dummySize, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
++	if (!dummyUpload.IsNull() && !dummyStructuredBuffer.IsNull()) {
 +		void *mapped = nullptr;
-+		D3D12_CHECK(dummyStructuredBuffer.Get()->Map(0, nullptr, &mapped));
++		D3D12_CHECK(dummyUpload.Get()->Map(0, nullptr, &mapped));
 +		memset(mapped, 0, static_cast<size_t>(dummySize));
-+		dummyStructuredBuffer.Get()->Unmap(0, nullptr);
++		dummyUpload.Get()->Unmap(0, nullptr);
++
++		d3dCommandList->CopyBufferRegion(dummyStructuredBuffer.Get(), 0, dummyUpload.Get(), 0, dummySize);
++		CD3DX12_RESOURCE_BARRIER toSrv = CD3DX12_RESOURCE_BARRIER::Transition(
++			dummyStructuredBuffer.Get(),
++			D3D12_RESOURCE_STATE_COPY_DEST,
++			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
++		d3dCommandList->ResourceBarrier(1, &toSrv);
++		submitCommandList();
++		waitForGPU();
++		resetCommandList();
 +	}
++	dummyUpload.Release();
 +}
 +
  void RT64::Device::createRaytracingPipeline() {
  	RT64_LOG_PRINTF("Raytracing pipeline creation started");
  
-@@ -1038,6 +1134,11 @@ void RT64::Device::createRaytracingPipeline() {
+@@ -1135,6 +1243,11 @@ void RT64::Device::createRaytracingPipeline() {
  
  	nv_helpers_dx12::RayTracingPipelineGenerator pipeline(d3dDevice);
  
@@ -815,7 +827,7 @@ index 8c7e9ff..72cca1a 100644
  	RT64_LOG_PRINTF("Loading shader libraries");
  
  	// Shader libraries.
-@@ -1087,9 +1188,7 @@ void RT64::Device::createRaytracingPipeline() {
+@@ -1184,9 +1297,7 @@ void RT64::Device::createRaytracingPipeline() {
  
  	RT64_LOG_PRINTF("Creating root signatures");
  
@@ -825,7 +837,7 @@ index 8c7e9ff..72cca1a 100644
  	if (d3dCustomHitSignature == nullptr) { d3dCustomHitSignature = createCustomHitSignature(true); }
  	if (d3dCustomShadowHitSignature == nullptr) { d3dCustomShadowHitSignature = createCustomHitSignature(false); }
  
-@@ -1118,10 +1217,10 @@ void RT64::Device::createRaytracingPipeline() {
+@@ -1215,10 +1326,10 @@ void RT64::Device::createRaytracingPipeline() {
  
  	RT64_LOG_PRINTF("Adding root signature associations");
  
@@ -840,7 +852,7 @@ index 8c7e9ff..72cca1a 100644
  
  	addedCustomShaders.clear();
  	for (Shader *customShader : customShaders) {
-@@ -1140,7 +1239,9 @@ void RT64::Device::createRaytracingPipeline() {
+@@ -1237,7 +1348,9 @@ void RT64::Device::createRaytracingPipeline() {
  	}
  
  	// Pipeline configuration. Path tracing only needs one recursion level at most.
@@ -851,7 +863,7 @@ index 8c7e9ff..72cca1a 100644
  	pipeline.SetMaxAttributeSize(2 * sizeof(float));
  	pipeline.SetMaxRecursionDepth(1);
  
-@@ -1209,10 +1310,10 @@ void RT64::Device::createDxcCompiler() {
+@@ -1306,10 +1419,10 @@ void RT64::Device::createDxcCompiler() {
  	RT64_LOG_PRINTF("Compiler creation finished");
  }
  
@@ -865,7 +877,7 @@ index 8c7e9ff..72cca1a 100644
  	rsc.AddHeapRangesParameter({
  		RT64_UAV_DESCRIPTORS(RT64_UAV_RANGE_ENTRY)
  		{ SRV_INDEX(gBackground), 1, 0, D3D12_DESCRIPTOR_RANGE_TYPE_SRV, HEAP_INDEX(gBackground) },
-@@ -1225,8 +1326,11 @@ ID3D12RootSignature *RT64::Device::createRayGenSignature() {
+@@ -1322,8 +1435,11 @@ ID3D12RootSignature *RT64::Device::createRayGenSignature() {
  		{ CBV_INDEX(gParams), 1, 0, D3D12_DESCRIPTOR_RANGE_TYPE_CBV, HEAP_INDEX(gParams) }
  	});
  
@@ -879,7 +891,7 @@ index 8c7e9ff..72cca1a 100644
  	desc.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
  	desc.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
  	desc.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-@@ -1241,38 +1345,15 @@ ID3D12RootSignature *RT64::Device::createRayGenSignature() {
+@@ -1338,38 +1454,15 @@ ID3D12RootSignature *RT64::Device::createRayGenSignature() {
  	desc.ShaderRegister = 0;
  	desc.RegisterSpace = 0;
  
@@ -920,7 +932,7 @@ index 8c7e9ff..72cca1a 100644
  	for (unsigned int i = 1; i < RT64_MAX_SHADER_UNIFORM_BLOCKS; i++) {
  		rsc.AddRootParameter(D3D12_ROOT_PARAMETER_TYPE_CBV, i);
  	}
-@@ -1281,34 +1362,10 @@ ID3D12RootSignature *RT64::Device::createCustomHitSignature(bool hitBuffers) {
+@@ -1378,34 +1471,10 @@ ID3D12RootSignature *RT64::Device::createCustomHitSignature(bool hitBuffers) {
  }
  
  ID3D12RootSignature *RT64::Device::createUberHitSignature(bool hitBuffers) {
@@ -956,7 +968,7 @@ index 8c7e9ff..72cca1a 100644
  	return rsc.Generate(d3dDevice, true, false, nullptr, 0);
  }
  
-@@ -1707,7 +1764,14 @@ void RT64::Device::postRender(int vsyncInterval) {
+@@ -1853,7 +1922,14 @@ void RT64::Device::postRender(int vsyncInterval, View *activeView, bool frameGen
  
  	// Present the frame.
  	const UINT presentFlags = ((vsyncInterval == 0) && allowTearing) ? DXGI_PRESENT_ALLOW_TEARING : 0;
@@ -973,10 +985,10 @@ index 8c7e9ff..72cca1a 100644
  	d3dFrameIndex = d3dSwapChain->GetCurrentBackBufferIndex();
  
 diff --git a/src/rt64lib/private/rt64_device.h b/src/rt64lib/private/rt64_device.h
-index 77624af..9c5cada 100644
+index 631d364..f25ef55 100644
 --- a/src/rt64lib/private/rt64_device.h
 +++ b/src/rt64lib/private/rt64_device.h
-@@ -92,13 +92,15 @@ namespace RT64 {
+@@ -102,13 +102,15 @@ namespace RT64 {
  		void *surfaceMissID;
  		void *shadowMissID;
  		Texture *blueNoise;
@@ -993,7 +1005,7 @@ index 77624af..9c5cada 100644
  
  		IDxcBlob *d3dUberSurfaceHitLibrary;
  		IDxcBlob *d3dUberShadowHitLibrary;
-@@ -144,10 +146,11 @@ namespace RT64 {
+@@ -164,10 +166,11 @@ namespace RT64 {
  		void loadPipeline();
  		void loadAssets();
  		void loadBlueNoise();
@@ -1006,15 +1018,15 @@ index 77624af..9c5cada 100644
  		ID3D12RootSignature *createUberHitSignature(bool hitBuffers);
  		ID3D12RootSignature *createCustomHitSignature(bool hitBuffers);
  		ID3D12RootSignature *d3dCustomHitSignature;
-@@ -172,6 +175,7 @@ namespace RT64 {
+@@ -194,6 +197,7 @@ namespace RT64 {
  		ID3D12GraphicsCommandList4 *getD3D12CommandList() const;
  		ID3D12StateObject *getD3D12RtStateObject() const;
  		ID3D12StateObjectProperties *getD3D12RtStateObjectProperties() const;
 +		ID3D12RootSignature *getD3D12RtGlobalRootSignature() const;
  		ID3D12Resource *getD3D12RenderTarget() const;
  		CD3DX12_CPU_DESCRIPTOR_HANDLE getD3D12RTV() const;
- 		ID3D12RootSignature *getComposeRootSignature() const;
-@@ -216,6 +220,8 @@ namespace RT64 {
+ 		IDXGISwapChain3 *getD3D12SwapChain() const;
+@@ -240,6 +244,8 @@ namespace RT64 {
  		IDxcLibrary *getDxcLibrary() const;
  		Mipmaps *getMipmaps() const;
  		Texture *getBlueNoiseTexture() const;
@@ -1097,10 +1109,10 @@ index 6a35a46..13600a6 100644
  
  	void updateSettings(const DenoiseParameters &p) {
 diff --git a/src/rt64lib/private/rt64_view.cpp b/src/rt64lib/private/rt64_view.cpp
-index 1be2f85..eda7c0c 100644
+index e80870f..0dc9e5e 100644
 --- a/src/rt64lib/private/rt64_view.cpp
 +++ b/src/rt64lib/private/rt64_view.cpp
-@@ -933,69 +933,86 @@ void RT64::View::writeSwapDescriptors(const std::function<D3D12_CPU_DESCRIPTOR_H
+@@ -1083,69 +1083,86 @@ void RT64::View::writeSwapDescriptors(const std::function<D3D12_CPU_DESCRIPTOR_H
  }
  
  void RT64::View::writeDynamicDescriptors(const std::function<D3D12_CPU_DESCRIPTOR_HANDLE(HeapIndices)> &handleFor, bool forceRewrite) {
@@ -1211,7 +1223,7 @@ index 1be2f85..eda7c0c 100644
  			cachedInstanceMaterialsBuffer = materialsBuffer;
  		}
  	}
-@@ -1080,44 +1097,55 @@ void RT64::View::createShaderResourceHeap() {
+@@ -1230,44 +1247,55 @@ void RT64::View::createShaderResourceHeap() {
  			handle.ptr += handleIncrement;
  		}
  
@@ -1257,6 +1269,10 @@ index 1be2f85..eda7c0c 100644
 -						if (instanceTextures[i] != nullptr) {
 -							textureSRVDesc.Format = instanceTextures[i]->getFormat();
 -							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(instanceTextures[i]->getTexture(), &textureSRVDesc, instanceHandle);
+-						}
+-						else {
+-							textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+-							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(nullptr, &textureSRVDesc, instanceHandle);
 +			if (customTextureSlots > 0) {
 +				auto writeInstanceTextures = [&](const std::vector<RenderInstance> &instances) {
 +					for (const RenderInstance &inst : instances) {
@@ -1281,10 +1297,6 @@ index 1be2f85..eda7c0c 100644
 +
 +							instanceHandle.ptr += handleIncrement;
  						}
--						else {
--							textureSRVDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
--							scene->getDevice()->getD3D12Device()->CreateShaderResourceView(nullptr, &textureSRVDesc, instanceHandle);
--						}
 -
 -						instanceHandle.ptr += handleIncrement;
  					}
@@ -1300,7 +1312,7 @@ index 1be2f85..eda7c0c 100644
  		}
  	}
  
-@@ -1315,15 +1343,6 @@ void RT64::View::createShaderResourceHeap() {
+@@ -1465,15 +1493,6 @@ void RT64::View::createShaderResourceHeap() {
  }
  
  void RT64::View::createShaderBindingTable() {
@@ -1316,7 +1328,7 @@ index 1be2f85..eda7c0c 100644
  	// Add the vertex buffers from all the meshes used by the instances to the hit group.
  	void *uberSurfaceHitGroupID = scene->getDevice()->getSurfaceHitGroupID();
  	void *uberShadowHitGroupID = scene->getDevice()->getShadowHitGroupID();
-@@ -1371,15 +1390,13 @@ void RT64::View::createShaderBindingTable() {
+@@ -1521,15 +1540,13 @@ void RT64::View::createShaderBindingTable() {
  	// The SBT helper class collects calls to Add*Program. If called several times, the helper must be emptied before re-adding shaders.
  	sbtHelper.Reset();
  
@@ -1339,7 +1351,7 @@ index 1be2f85..eda7c0c 100644
  	sbtHelper.AddMissProgram(scene->getDevice()->getSurfaceMissID(), {});
  	sbtHelper.AddMissProgram(scene->getDevice()->getShadowMissID(), {});
  
-@@ -1394,8 +1411,6 @@ void RT64::View::createShaderBindingTable() {
+@@ -1544,8 +1561,6 @@ void RT64::View::createShaderBindingTable() {
  		hitGroupArgs.clear();
  		hitGroupArgs.push_back((void *)(rtInstance.vertexBufferView->BufferLocation));
  		hitGroupArgs.push_back((void *)(rtInstance.indexBufferView->BufferLocation));
@@ -1348,7 +1360,7 @@ index 1be2f85..eda7c0c 100644
  
  		if (usesCustomHitGroups) {
  			for (uint32_t reg = 1; reg < RT64_MAX_SHADER_UNIFORM_BLOCKS; reg++) {
-@@ -1994,7 +2009,7 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2149,7 +2164,7 @@ void RT64::View::render(float deltaTimeMs) {
  	};
  
  	// Raytracing.
@@ -1357,7 +1369,7 @@ index 1be2f85..eda7c0c 100644
  		RT64_LOG_PRINTF("Drawing raytraced instances");
  
  		// Ray generation.
-@@ -2035,10 +2050,22 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2190,10 +2205,22 @@ void RT64::View::render(float deltaTimeMs) {
  		d3dCommandList->ResourceBarrier(_countof(preDispatchBarriers), preDispatchBarriers);
  
  		// Bind pipeline and dispatch primary rays.
@@ -1381,7 +1393,7 @@ index 1be2f85..eda7c0c 100644
  
  		// Barriers for shading buffers before dispatching secondary rays.
  		CD3DX12_RESOURCE_BARRIER shadingBarriers[] = {
-@@ -2057,12 +2084,12 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2212,12 +2239,12 @@ void RT64::View::render(float deltaTimeMs) {
  		// Dispatch rays for direct light.
  		RT64_LOG_PRINTF("Dispatching direct light rays");
  		desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize();
@@ -1396,7 +1408,7 @@ index 1be2f85..eda7c0c 100644
  
  		// Wait until indirect light is done before dispatching reflection or refraction rays.
  		// TODO: This is only required to prevent simultaneous usage of the anyhit buffers.
-@@ -2073,7 +2100,7 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2228,7 +2255,7 @@ void RT64::View::render(float deltaTimeMs) {
  		if (rtAnyRefraction) {
  			RT64_LOG_PRINTF("Dispatching refraction rays");
  			desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 4;
@@ -1405,7 +1417,12 @@ index 1be2f85..eda7c0c 100644
  
  			// Wait until refraction is done before dispatching reflection rays.
  			// TODO: This is only required to prevent simultaneous usage of the anyhit buffers.
-@@ -2086,7 +2113,7 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2237,11 +2264,11 @@ void RT64::View::render(float deltaTimeMs) {
+ 			d3dCommandList->ResourceBarrier(1, &refractionBarrier);
+ 		}
+ 
+-		const bool volumetricLights = scene->getVolumetricLights();
++		const bool volumetricLights = scene->getVolumetricLights() && (scene->getLightsCount() > 0);
  		if (volumetricLights) {
  			RT64_LOG_PRINTF("Dispatching volumetric light rays");
  			desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 5;
@@ -1414,7 +1431,7 @@ index 1be2f85..eda7c0c 100644
  		}
  
  		if (rtAnyReflection) {
-@@ -2095,7 +2122,7 @@ void RT64::View::render(float deltaTimeMs) {
+@@ -2250,7 +2277,7 @@ void RT64::View::render(float deltaTimeMs) {
  				// Dispatch rays for reflection.
  				RT64_LOG_PRINTF("Dispatching reflection rays");
  				desc.RayGenerationShaderRecord.StartAddress = sbtStorage.Get()->GetGPUVirtualAddress() + sbtHelper.GetRayGenEntrySize() * 3;
@@ -1423,3 +1440,105 @@ index 1be2f85..eda7c0c 100644
  				reflections--;
  
  				// Add a barrier to wait for the input UAVs to be finished if there's more passes left to be done.
+diff --git a/src/rt64lib/shaders/IndirectRayGen.hlsl b/src/rt64lib/shaders/IndirectRayGen.hlsl
+index 57d072b..ff1f8fb 100644
+--- a/src/rt64lib/shaders/IndirectRayGen.hlsl
++++ b/src/rt64lib/shaders/IndirectRayGen.hlsl
+@@ -72,7 +72,7 @@ void IndirectRayGen() {
+ 			float3 resNormal = float3(0.0f, 0.0f, 0.0f);
+ 			float4 resColor = float4(0, 0, 0, 1);
+ 			int resInstanceId = -1;
+-			for (uint hit = 0; hit < payload.nhits; hit++) {
++			for (uint hit = 0; hit < min(payload.nhits, MAX_HIT_QUERIES); hit++) {
+ 				uint hitBufferIndex = getHitBufferIndex(hit, launchIndex, launchDims);
+ 				float4 hitColor = gHitColor[hitBufferIndex];
+ 				float alphaContrib = (resColor.a * hitColor.a);
+diff --git a/src/rt64lib/shaders/Lights.hlsli b/src/rt64lib/shaders/Lights.hlsli
+index 0a5e28e..2ab7d8d 100644
+--- a/src/rt64lib/shaders/Lights.hlsli
++++ b/src/rt64lib/shaders/Lights.hlsli
+@@ -32,9 +32,18 @@ struct LightInfo {
+ StructuredBuffer<LightInfo> SceneLights : register(t4);
+ 
+ #define MAX_LIGHTS 16
++#define RT64_SCENE_LIGHTS_MAX 256
+ #define RT64_LIGHT_TYPE_POINT 1
+ #define RT64_LIGHT_SHAPE_SQUARE 1
+ 
++// AMD GetDimensions on a bad/upload SRV can return ~4e9. Iterating that per pixel TDRs
++// with DXGI_ERROR_DEVICE_HUNG (0x887A0006). NVIDIA returns 0 or the real count.
++uint GetSceneLightCount() {
++	uint lightCount, lightStride;
++	SceneLights.GetDimensions(lightCount, lightStride);
++	return min(lightCount, RT64_SCENE_LIGHTS_MAX);
++}
++
+ void ComputePointLightBasis(float pitch, float yaw, float roll, out float3 lightForward, out float3 lightRight, out float3 lightUp) {
+ 	float sinYaw = sin(yaw), cosYaw = cos(yaw);
+ 	float3 forwardYawed = float3(sinYaw, 0.0f, cosYaw);
+@@ -262,11 +271,10 @@ float3 ComputeLightsRandom(uint2 launchIndex, uint instanceId, float3 position,
+ 	float centeredShadowFactor = traceShadows ? TraceCenteredShadow(instanceId, position, normal, centeredInstanceMask) : 1.0f;
+ 	if (lightGroupMaskBits > 0) {
+ 		uint sLightCount = 0;
+-		uint gLightCount, gLightStride;
++		uint gLightCount = GetSceneLightCount();
+ 		uint sLightIndices[MAX_LIGHTS + 1];
+ 		float sLightIntensities[MAX_LIGHTS + 1];
+ 		float totalLightIntensity = 0.0f;
+-		SceneLights.GetDimensions(gLightCount, gLightStride);
+ 		for (uint l = 0; (l < gLightCount) && (sLightCount < MAX_LIGHTS); l++) {
+ 			if (lightGroupMaskBits & SceneLights[l].groupBits) {
+ 				float lightIntensity = CalculateLightIntensitySimple(l, position, normal, ignoreNormalFactor);
+diff --git a/src/rt64lib/shaders/PrimaryRayGen.hlsl b/src/rt64lib/shaders/PrimaryRayGen.hlsl
+index 8b66e78..fe9560b 100644
+--- a/src/rt64lib/shaders/PrimaryRayGen.hlsl
++++ b/src/rt64lib/shaders/PrimaryRayGen.hlsl
+@@ -85,7 +85,7 @@ void PrimaryRayGen() {
+ 	int resPickInstanceId = -1;
+ 	float depthWriteT = RAY_MAX_DISTANCE;
+ 	float depthWriteOrder = 0.0f;
+-	for (uint hit = 0; hit < payload.nhits; hit++) {
++	for (uint hit = 0; hit < min(payload.nhits, MAX_HIT_QUERIES); hit++) {
+ 		uint hitBufferIndex = getHitBufferIndex(hit, launchIndex, launchDims);
+ 		float4 hitColor = gHitColor[hitBufferIndex];
+ 		uint hitInstanceId = gHitInstanceId[hitBufferIndex];
+diff --git a/src/rt64lib/shaders/ReflectionRayGen.hlsl b/src/rt64lib/shaders/ReflectionRayGen.hlsl
+index 39842e3..89bcb50 100644
+--- a/src/rt64lib/shaders/ReflectionRayGen.hlsl
++++ b/src/rt64lib/shaders/ReflectionRayGen.hlsl
+@@ -65,7 +65,7 @@ void ReflectionRayGen() {
+ 	float3 resTransparent = float3(0.0f, 0.0f, 0.0f);
+ 	float depthWriteT = RAY_MAX_DISTANCE;
+ 	float depthWriteOrder = 0.0f;
+-	for (uint hit = 0; hit < payload.nhits; hit++) {
++	for (uint hit = 0; hit < min(payload.nhits, MAX_HIT_QUERIES); hit++) {
+ 		uint hitBufferIndex = getHitBufferIndex(hit, launchIndex, launchDims);
+ 		float4 hitColor = gHitColor[hitBufferIndex];
+ 
+diff --git a/src/rt64lib/shaders/RefractionRayGen.hlsl b/src/rt64lib/shaders/RefractionRayGen.hlsl
+index 756aeb3..5aded48 100644
+--- a/src/rt64lib/shaders/RefractionRayGen.hlsl
++++ b/src/rt64lib/shaders/RefractionRayGen.hlsl
+@@ -66,7 +66,7 @@ void RefractionRayGen() {
+ 	float3 resTransparent = float3(0.0f, 0.0f, 0.0f);
+ 	float depthWriteT = RAY_MAX_DISTANCE;
+ 	float depthWriteOrder = 0.0f;
+-	for (uint hit = 0; hit < payload.nhits; hit++) {
++	for (uint hit = 0; hit < min(payload.nhits, MAX_HIT_QUERIES); hit++) {
+ 		uint hitBufferIndex = getHitBufferIndex(hit, launchIndex, launchDims);
+ 		float4 hitColor = gHitColor[hitBufferIndex];
+ 
+diff --git a/src/rt64lib/shaders/VolumetricRayGen.hlsl b/src/rt64lib/shaders/VolumetricRayGen.hlsl
+index 6bf3367..7403b85 100644
+--- a/src/rt64lib/shaders/VolumetricRayGen.hlsl
++++ b/src/rt64lib/shaders/VolumetricRayGen.hlsl
+@@ -28,8 +28,7 @@ void VolumetricRayGen() {
+ 	float maxDist = (instanceId >= 0) ? length(shadingPosition - rayOrigin) : RAY_MAX_DISTANCE;
+ 
+ 	float3 result = float3(0.0f, 0.0f, 0.0f);
+-	uint lightCount, lightStride;
+-	SceneLights.GetDimensions(lightCount, lightStride);
++	uint lightCount = GetSceneLightCount();
+ 	for (uint l = 0; l < lightCount; l++) {
+ 		if ((SceneLights[l].lightType != RT64_LIGHT_TYPE_POINT) || (SceneLights[l].volumetricEnabled == 0)) {
+ 			continue;
